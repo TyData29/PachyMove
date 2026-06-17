@@ -1,0 +1,99 @@
+meta:
+  name: "Pré-audit migration PG14 → PG18"
+  version: "1.0"
+
+defaults:
+  statement_timeout_ms: 30000
+  read_only: true
+
+queries:
+
+  # ── Instance ────────────────────────────────────────────────────────────────
+
+  - id: list_databases
+    title: "Inventaire des bases et tailles"
+    file: instance/list_databases.sql
+    scope: instance
+    enabled: true
+    tags: [inventaire, volume]
+
+  - id: server_config
+    title: "Configuration serveur (paramètres clés)"
+    file: instance/server_config.sql
+    scope: instance
+    enabled: true
+    tags: [configuration]
+
+  - id: roles
+    title: "Rôles PostgreSQL"
+    file: instance/roles.sql
+    scope: instance
+    enabled: true
+    tags: [securite, roles]
+
+  - id: replication_slots
+    title: "Slots de réplication"
+    file: instance/replication_slots.sql
+    scope: instance
+    enabled: true
+    tags: [replication, migration]
+
+  - id: auth_md5_check
+    title: "Rôles avec mot de passe MD5"
+    file: instance/auth_md5_check.sql
+    scope: instance
+    enabled: false
+    requires_superuser: true
+    tags: [auth, securite]
+    skip_reason_if_disabled: "Nécessite un accès superuser (pg_authid) — MD5 supprimé en PG17+"
+
+  # ── Database ────────────────────────────────────────────────────────────────
+
+  - id: extensions
+    title: "Extensions installées"
+    file: database/extensions.sql
+    scope: database
+    enabled: true
+    tags: [inventaire, extensions]
+
+  - id: postgis_version
+    title: "Version PostGIS et composants"
+    file: database/postgis_version.sql
+    scope: database
+    enabled: true
+    tags: [postgis, extensions]
+
+  - id: fdw_servers
+    title: "Foreign servers et options"
+    file: database/fdw_servers.sql
+    scope: database
+    enabled: true
+    tags: [fdw]
+
+  - id: fdw_foreign_tables
+    title: "Foreign tables"
+    file: database/fdw_foreign_tables.sql
+    scope: database
+    enabled: true
+    tags: [fdw]
+
+  - id: public_schema_objects
+    title: "Objets dans le schéma public"
+    file: database/public_schema_objects.sql
+    scope: database
+    enabled: true
+    tags: [inventaire, schema]
+
+  - id: generated_columns
+    title: "Colonnes générées (GENERATED ALWAYS)"
+    file: database/generated_columns.sql
+    scope: database
+    enabled: true
+    tags: [schema, migration]
+
+  - id: publications
+    title: "Publications de réplication logique"
+    file: database/publications.sql
+    scope: database
+    enabled: true
+    tags: [replication, migration]

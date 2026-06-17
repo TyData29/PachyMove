@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pgaudit-runner"
+version = "1.0.0"
+description = "Outil CLI de pré-audit PostgreSQL avant migration majeure"
+requires-python = ">=3.10"
+dependencies = [
+    "psycopg[binary]>=3.1",
+    "PyYAML>=6.0",
+    "click>=8.1",
+]
+
+[project.scripts]
+pgaudit-runner = "pgaudit_runner.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pgaudit_runner*"]
