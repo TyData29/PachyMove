@@ -9,7 +9,7 @@ Boîte à outils pour préparer une migration PostgreSQL majeure (ex. PG14 → P
 | Module | Manifeste | Usage |
 |---|---|---|
 | **Pré-audit migration** | `pg14_to_pg18.yaml` | Inventaire avant migration majeure (bases, config serveur, rôles, extensions, FDW, colonnes générées, publications…) |
-| **Audit des droits** | `rights_audit.yaml` | Cartographie des privilèges PostgreSQL — ACL directs, hérités de groupe (résolution récursive), propriété, signalement RLS. Générique, réutilisable hors contexte de migration. Voir `.tydata/specs/specs_module_droits_pachymove.md` |
+| **Audit des droits** | `rights_audit.yaml` | Cartographie des privilèges PostgreSQL — ACL directs, hérités de groupe (résolution récursive), propriété, signalement RLS. Générique, réutilisable hors contexte de migration. |
 
 Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`. La partie diff (comparer la matrice de droits à une cible YAML et générer les `GRANT`/`REVOKE` correctifs) est volontairement hors scope de l'audit des droits actuel — nature différente (comparaison + génération de code, pas lecture seule + rapport), à construire en outil séparé une fois une matrice réelle validée en mission.
 
