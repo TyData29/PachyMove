@@ -12,23 +12,30 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 from pathlib import Path
 
 
 def export_csv(audit_json: Path, output_dir: Path) -> list[Path]:
+    def _safe_filename_part(value: object) -> str:
+        s = str(value or "")
+        s = re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("._")
+        return s or "unknown"
+
     with open(audit_json, encoding="utf-8") as f:
         data = json.load(f)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
 
-    for r in data["results"]:
-        if r["status"] != "success" or not r.get("columns"):
+    for r in data.get("results", []):
+        if r.get("status") != "success" or not r.get("columns"):
             continue
-        target = r["target"].replace("/", "_")
-        csv_path = output_dir / f"{r['id']}__{target}.csv"
+        target = _safe_filename_part(r.get("target"))
+        qid = _safe_filename_part(r.get("id"))
+        csv_path = output_dir / f"{qid}__{target}.csv"
         with open(csv_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=r["columns"])
+            writer = csv.DictWriter(f, fieldnames=r["columns"], extrasaction="ignore")
             writer.writeheader()
             writer.writerows(r.get("rows") or [])
         written.append(csv_path)
