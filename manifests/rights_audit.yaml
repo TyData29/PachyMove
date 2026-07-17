@@ -1,0 +1,48 @@
+meta:
+  name: "Audit des droits PostgreSQL"
+  version: "1.0"
+
+defaults:
+  statement_timeout_ms: 60000
+  read_only: true
+
+queries:
+
+  # ── Instance ────────────────────────────────────────────────────────────────
+
+  - id: role_membership_tree
+    title: "Arbre d'appartenance aux groupes (récursif)"
+    file: instance/role_membership_tree.sql
+    scope: instance
+    enabled: true
+    tags: [droits]
+
+  # ── Database ────────────────────────────────────────────────────────────────
+
+  - id: relation_privileges
+    title: "Droits sur tables/vues/matviews/foreign tables/séquences"
+    file: database/relation_privileges.sql
+    scope: database
+    enabled: true
+    tags: [droits]
+
+  - id: schema_privileges
+    title: "Droits sur les schémas (USAGE et création d'objets)"
+    file: database/schema_privileges.sql
+    scope: database
+    enabled: true
+    tags: [droits]
+
+  - id: function_privileges
+    title: "Droits sur les fonctions/procédures"
+    file: database/function_privileges.sql
+    scope: database
+    enabled: true
+    tags: [droits]
+
+  - id: rls_policies_presence
+    title: "Présence de politiques RLS (signalement, non audité en détail)"
+    file: database/rls_policies_presence.sql
+    scope: database
+    enabled: true
+    tags: [droits, rls]
