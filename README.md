@@ -65,16 +65,38 @@ Le mot de passe n'est jamais passé en argument. Ordre de résolution :
 
 ---
 
+## Manifestes disponibles
+
+| Manifeste | Usage |
+|---|---|
+| `pg14_to_pg18.yaml` | Pré-audit avant migration majeure (bases, config, extensions, FDW…) |
+| `rights_audit.yaml` | Cartographie des droits PostgreSQL — ACL directs/hérités de groupe/propriété, RLS. Générique, réutilisable hors contexte de migration. Voir `.tydata/specs/specs_module_droits_pachymove.md` |
+
+### Export CSV (optionnel)
+
+Pour filtrer un résultat en tableur (utile notamment pour la matrice de droits, souvent trop volumineuse pour le rapport Markdown tronqué) :
+
+```powershell
+python scripts/export_csv.py output/audit_20260612_143022.json --output-dir output/csv/
+```
+
+Écrit un `.csv` par requête réussie du JSON, sans dépendance supplémentaire.
+
+---
+
 ## Structure du projet
 
 ```
 pgaudit-runner/
 ├── pgaudit_runner/         # code Python
 ├── queries/
-│   ├── instance/           # exécutées une fois (rôles, config, bases…)
-│   └── database/           # exécutées par base ciblée (extensions, FDW…)
+│   ├── instance/           # exécutées une fois (rôles, config, groupes, bases…)
+│   └── database/           # exécutées par base ciblée (extensions, FDW, droits…)
 ├── manifests/
-│   └── pg14_to_pg18.yaml   # manifeste : quelles requêtes, activées ou non
+│   ├── pg14_to_pg18.yaml   # pré-audit migration PG14 → PG18
+│   └── rights_audit.yaml   # cartographie des droits (ACL, groupes, RLS)
+├── scripts/
+│   └── export_csv.py       # export CSV d'un JSON d'audit (filtrage tableur)
 └── output/                 # JSON + rapports générés (gitignore)
 ```
 
