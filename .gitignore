@@ -8,6 +8,7 @@ venv/
 dist/
 build/
 .env
+.pytest_cache/
 
 # Claude
 CLAUDE.md

@@ -13,9 +13,15 @@ dependencies = [
     "click>=8.1",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
 [project.scripts]
 pgaudit-runner = "pgaudit_runner.cli:cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["pgaudit_runner*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

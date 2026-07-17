@@ -1,8 +1,17 @@
-# pgaudit-runner
+# PachyMove
 
-Outil CLI de pré-audit PostgreSQL avant migration majeure (ex. PG14 → PG18).
+Boîte à outils pour préparer une migration PostgreSQL majeure (ex. PG14 → PG18). Un même moteur CLI, `pgaudit-runner`, exécute des modules déclarés en manifeste YAML : chacun trace ses résultats dans un JSON horodaté, puis génère un rapport Markdown. Conçu pour être réutilisable d'une mission à l'autre sans toucher au code Python.
 
-Exécute un jeu de requêtes SQL déclarées dans un manifeste YAML, trace chaque résultat dans un fichier JSON horodaté, puis génère un rapport Markdown. Conçu pour être réutilisable d'une mission à l'autre sans toucher au code Python.
+---
+
+## Modules
+
+| Module | Manifeste | Usage |
+|---|---|---|
+| **Pré-audit migration** | `pg14_to_pg18.yaml` | Inventaire avant migration majeure (bases, config serveur, rôles, extensions, FDW, colonnes générées, publications…) |
+| **Audit des droits** | `rights_audit.yaml` | Cartographie des privilèges PostgreSQL — ACL directs, hérités de groupe (résolution récursive), propriété, signalement RLS. Générique, réutilisable hors contexte de migration. |
+
+Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`. La partie diff (comparer la matrice de droits à une cible YAML et générer les `GRANT`/`REVOKE` correctifs) est volontairement hors scope de l'audit des droits actuel — nature différente (comparaison + génération de code, pas lecture seule + rapport), à construire en outil séparé une fois une matrice réelle validée en mission.
 
 ---
 
@@ -14,6 +23,7 @@ python -m venv .venv
 # source .venv/bin/activate   # Linux/macOS
 
 pip install -e .
+# ou, pour lancer les tests : pip install -e .[dev]
 ```
 
 **Dépendances :** Python ≥ 3.10 · psycopg v3 · PyYAML · click
@@ -63,27 +73,52 @@ Le mot de passe n'est jamais passé en argument. Ordre de résolution :
 3. `pg_service.conf` via `--service`
 4. Prompt interactif masqué
 
+### Export CSV (optionnel)
+
+Pour filtrer un résultat en tableur (utile notamment pour la matrice de droits, souvent trop volumineuse pour le rapport Markdown tronqué) :
+
+```powershell
+python scripts/export_csv.py output/audit_20260612_143022.json --output-dir output/csv/
+```
+
+Écrit un `.csv` par requête réussie du JSON, sans dépendance supplémentaire.
+
 ---
 
 ## Structure du projet
 
 ```
-pgaudit-runner/
-├── pgaudit_runner/         # code Python
+PachyMove/
+├── pgaudit_runner/         # code Python — moteur CLI commun à tous les modules
 ├── queries/
-│   ├── instance/           # exécutées une fois (rôles, config, bases…)
-│   └── database/           # exécutées par base ciblée (extensions, FDW…)
+│   ├── instance/           # exécutées une fois (rôles, config, groupes, bases…)
+│   └── database/           # exécutées par base ciblée (extensions, FDW, droits…)
 ├── manifests/
-│   └── pg14_to_pg18.yaml   # manifeste : quelles requêtes, activées ou non
+│   ├── pg14_to_pg18.yaml   # module Pré-audit migration
+│   └── rights_audit.yaml   # module Audit des droits
+├── scripts/
+│   └── export_csv.py       # export CSV d'un JSON d'audit (filtrage tableur)
+├── tests/                  # suite pytest (config, models, runner, reporter, intégration)
 └── output/                 # JSON + rapports générés (gitignore)
 ```
+
+---
+
+## Tests & CI
+
+```bash
+pip install -e .[dev]
+pytest
+```
+
+CI GitHub Actions minimaliste (`.github/workflows/ci.yml`) : `pytest` sur push vers `main` et sur chaque pull request.
 
 ---
 
 ## Ajouter une requête
 
 1. Créer le fichier SQL dans `queries/instance/` ou `queries/database/`.
-2. Ajouter une entrée dans le manifeste YAML :
+2. Ajouter une entrée dans le manifeste YAML du module concerné :
 
 ```yaml
 - id: sequences
@@ -123,6 +158,6 @@ queries:
 
 ## Sécurité
 
-- `read_only: true` (défaut) : toute requête contenant `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT` ou `REVOKE` est rejetée avant exécution.
+- `read_only: true` (défaut) : toute requête contenant `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT` ou `REVOKE` est rejetée avant exécution — y compris si le mot-clé apparaît dans un commentaire SQL (garde-fou purement textuel).
 - Le mot de passe n'apparaît jamais dans le JSON de sortie ni dans les logs.
 - Recommandation : utiliser un rôle PostgreSQL en lecture seule côté serveur, en complément du garde-fou applicatif.
