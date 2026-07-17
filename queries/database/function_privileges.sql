@@ -1,5 +1,5 @@
 -- ACL explicites sur les fonctions/procédures — direct et hérité via groupes.
--- Mêmes exclusions techniques que droits_objets_relations.sql.
+-- Exclusions techniques : schémas système + schémas temporaires (voir clause WHERE ci-dessous).
 WITH RECURSIVE membership AS (
     SELECT am.member AS role_oid,
            am.roleid AS groupe_oid,
