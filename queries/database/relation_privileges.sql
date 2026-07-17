@@ -18,11 +18,12 @@ acl_directs AS (
     SELECT n.nspname                             AS schema,
            c.relname                             AS objet,
            c.relkind                             AS type_objet,
-           (aclexplode(c.relacl)).grantee        AS role_oid,
-           (aclexplode(c.relacl)).privilege_type AS privilege,
-           (aclexplode(c.relacl)).grantor::regrole AS accorde_par
+           acl.grantee                           AS role_oid,
+           acl.privilege_type                    AS privilege,
+           acl.grantor::regrole                  AS accorde_par
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
+    CROSS JOIN LATERAL aclexplode(c.relacl) AS acl(grantor, grantee, privilege_type, is_grantable)
     WHERE c.relkind IN ('r', 'v', 'm', 'f', 'S')
       AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
       AND n.nspname NOT LIKE 'pg\_temp\_%'
