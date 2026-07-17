@@ -14,10 +14,11 @@ WITH RECURSIVE membership AS (
 ),
 acl_directs AS (
     SELECT n.nspname                               AS schema,
-           (aclexplode(n.nspacl)).grantee          AS role_oid,
-           (aclexplode(n.nspacl)).privilege_type   AS privilege,
-           (aclexplode(n.nspacl)).grantor::regrole AS accorde_par
+           acl.grantee                            AS role_oid,
+           acl.privilege_type                     AS privilege,
+           acl.grantor::regrole                   AS accorde_par
     FROM pg_namespace n
+    CROSS JOIN LATERAL aclexplode(n.nspacl) AS acl(grantor, grantee, privilege_type, is_grantable)
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
       AND n.nspname NOT LIKE 'pg\_temp\_%'
       AND n.nspname NOT LIKE 'pg\_toast\_temp\_%'
