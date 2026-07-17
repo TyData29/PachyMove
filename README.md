@@ -158,6 +158,6 @@ queries:
 
 ## Sécurité
 
-- `read_only: true` (défaut) : toute requête contenant `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT` ou `REVOKE` est rejetée avant exécution — y compris si le mot-clé apparaît dans un commentaire SQL (garde-fou purement textuel).
+- `read_only: true` (défaut) : toute requête contenant `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT` ou `REVOKE` est rejetée avant exécution (garde-fou purement textuel).
 - Le mot de passe n'apparaît jamais dans le JSON de sortie ni dans les logs.
-- Recommandation : utiliser un rôle PostgreSQL en lecture seule côté serveur, en complément du garde-fou applicatif.
+- Recommandation : utiliser un rôle PostgreSQL en lecture seule côté serveur, en complément du garde-fou applicatif (néanmoins, certaines requêtes nécessitant un accès superuser seront bypassées).
