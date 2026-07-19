@@ -13,7 +13,8 @@ Boîte à outils pour préparer une migration PostgreSQL majeure (ex. PG14 → P
 
 Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`. La partie diff (comparer la matrice de droits à une cible YAML et générer les `GRANT`/`REVOKE` correctifs) est volontairement hors scope de l'audit des droits actuel — nature différente (comparaison + génération de code, pas lecture seule + rapport), à construire en outil séparé une fois une matrice réelle validée en mission.
 
-Convention pour la détection des bloquants : **zéro ligne renvoyée = sain**. `--tags bloquant` donne un run rapide de type « est-ce que je peux y aller ». Deux requêtes y dérogent volontairement (`shared_preload_libraries`, `public_schema_create_acl`) — une ligne y est informative, pas alarmante ; voir `.tydata/specs/specs_detection_migration_1.md`.
+Convention pour la détection des bloquants : **zéro ligne renvoyée = sain**. `--tags bloquant` donne un run rapide de type « est-ce que je peux y aller ».
+Note : `shared_preload_libraries` est un inventaire (renvoie des lignes même quand tout va bien) ; `public_schema_create_acl` est une requête informative taguée `delta` ; voir `.tydata/specs/specs_detection_migration_1.md`.
 
 ---
 
