@@ -65,6 +65,8 @@ def load_manifest(
                 requires_superuser=q.get("requires_superuser", False),
                 skip_reason_if_disabled=q.get("skip_reason_if_disabled"),
                 statement_timeout_ms=q.get("statement_timeout_ms", default_timeout),
+                expect_rows=q.get("expect_rows"),
+                severity_if_unexpected=q.get("severity_if_unexpected", "vigilance"),
                 sql=sql,
             )
         )

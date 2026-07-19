@@ -61,6 +61,8 @@ def run_query(
             sql=spec.sql,
             status="error",
             requires_superuser=spec.requires_superuser,
+            expect_rows=spec.expect_rows,
+            severity_if_unexpected=spec.severity_if_unexpected,
             error=ErrorDetail(
                 message="Requête rejetée : mot-clé d'écriture détecté (mode read_only actif)",
                 full_traceback="",
@@ -94,6 +96,8 @@ def run_query(
             columns=columns,
             rows=rows,
             row_count=len(rows),
+            expect_rows=spec.expect_rows,
+            severity_if_unexpected=spec.severity_if_unexpected,
         )
 
     except psycopg.Error as e:
@@ -110,6 +114,8 @@ def run_query(
             started_at=started_at.isoformat(),
             duration_ms=duration_ms,
             requires_superuser=spec.requires_superuser,
+            expect_rows=spec.expect_rows,
+            severity_if_unexpected=spec.severity_if_unexpected,
             error=ErrorDetail(
                 sqlstate=getattr(e, "sqlstate", None),
                 message=str(e).splitlines()[0],

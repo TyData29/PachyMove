@@ -15,6 +15,8 @@ class QuerySpec:
     requires_superuser: bool = False
     skip_reason_if_disabled: Optional[str] = None
     statement_timeout_ms: Optional[int] = None
+    expect_rows: Optional[int] = None
+    severity_if_unexpected: str = "vigilance"
     sql: Optional[str] = None  # chargé depuis le fichier .sql
 
 
@@ -41,6 +43,8 @@ class QueryResult:
     row_count: Optional[int] = None
     error: Optional[ErrorDetail] = None
     skip_reason: Optional[str] = None
+    expect_rows: Optional[int] = None
+    severity_if_unexpected: str = "vigilance"
 
 
 @dataclass
