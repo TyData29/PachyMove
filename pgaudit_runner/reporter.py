@@ -58,7 +58,8 @@ def extraire_synthese(results: list[dict]) -> list[dict]:
 
         if "severite" in columns and "constat" in columns:
             for row in rows:
-                constat = row.get("constat") or f"{r['id']} : {len(rows)} ligne(s)"
+                constat_value = row.get("constat")
+                constat = str(constat_value) if constat_value is not None else f"{r['id']} : {len(rows)} ligne(s)"
                 entries.append({
                     "severite": _normalize_severity(row.get("severite")),
                     "constat": constat,
