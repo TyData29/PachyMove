@@ -8,10 +8,12 @@ Boîte à outils pour préparer une migration PostgreSQL majeure (ex. PG14 → P
 
 | Module | Manifeste | Usage |
 |---|---|---|
-| **Pré-audit migration** | `pg14_to_pg18.yaml` | Inventaire avant migration majeure (bases, config serveur, rôles, extensions, FDW, colonnes générées, publications…) |
+| **Pré-audit migration** | `pg14_to_pg18.yaml` | Inventaire (bases, config serveur, rôles, extensions, FDW, colonnes générées, publications…) **+ détection des bloquants de migration** : Famille A (`--tags bloquant`, ex. collations, checksums, index invalides) et Famille B, delta 15→18 (`--tags delta`, ex. `search_path`, droits par défaut sur `public`) |
 | **Audit des droits** | `rights_audit.yaml` | Cartographie des privilèges PostgreSQL — ACL directs, hérités de groupe (résolution récursive), propriété, signalement RLS. Générique, réutilisable hors contexte de migration. |
 
 Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`. La partie diff (comparer la matrice de droits à une cible YAML et générer les `GRANT`/`REVOKE` correctifs) est volontairement hors scope de l'audit des droits actuel — nature différente (comparaison + génération de code, pas lecture seule + rapport), à construire en outil séparé une fois une matrice réelle validée en mission.
+
+Convention pour la détection des bloquants : **zéro ligne renvoyée = sain**. `--tags bloquant` donne un run rapide de type « est-ce que je peux y aller ». Deux requêtes y dérogent volontairement (`shared_preload_libraries`, `public_schema_create_acl`) — une ligne y est informative, pas alarmante ; voir `.tydata/specs/specs_detection_migration_1.md`.
 
 ---
 
@@ -59,6 +61,7 @@ pgaudit-runner report `
 | Option | Description |
 |---|---|
 | `--tags fdw,inventaire` | N'exécute que les requêtes portant ces tags |
+| `--tags bloquant` | Run rapide « est-ce que je peux y aller » (Famille A, module Pré-audit migration) |
 | `--only list_databases,roles` | Exécute uniquement ces ids |
 | `--exclude postgis_version` | Exclut ces ids |
 | `--maintenance-db postgres` | Base de connexion pour les requêtes `scope: instance` (défaut : `postgres`) |
