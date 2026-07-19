@@ -5,10 +5,105 @@ from collections import OrderedDict
 from pathlib import Path
 
 _BADGES: dict[str, str] = {"success": "✅", "skipped": "⏭️", "error": "❌"}
+_VALID_SEVERITIES = {"bloquant", "vigilance", "info"}
+_SYNTHESE_MAX_PAR_CONTROLE = 10
 
 
 def _badge(status: str) -> str:
     return _BADGES.get(status, "❓")
+
+
+def _normalize_severity(value: object) -> str:
+    v = str(value or "").strip().lower()
+    return v if v in _VALID_SEVERITIES else "info"
+
+
+def _synthese_engagee(results: list[dict]) -> bool:
+    """Le mécanisme de synthèse est-il utilisé par au moins une requête du run ?
+
+    Distingue « rien à signaler » (section affichée, all-clear explicite) de
+    « aucune requête n'utilise encore severite/expect_rows » (section absente,
+    comportement identique à avant cette fonctionnalité — pas de régression, et
+    pas de faux sentiment de sécurité tant que rien n'a été calibré, cf. spec §8).
+    """
+    for r in results:
+        if r.get("status") != "success":
+            continue
+        columns = r.get("columns") or []
+        if "severite" in columns and "constat" in columns:
+            return True
+        if r.get("expect_rows") is not None:
+            return True
+    return False
+
+
+def extraire_synthese(results: list[dict]) -> list[dict]:
+    """Retourne les constats de gravité, tous résultats confondus.
+
+    Deux sources :
+      - convention de colonnes : le résultat expose 'severite' et 'constat'
+      - expect_rows : le manifeste déclare un nombre de lignes attendu
+    La convention de colonnes prime si les deux sont présentes.
+    """
+    entries: list[dict] = []
+
+    for r in results:
+        if r.get("status") != "success":
+            continue
+
+        columns = r.get("columns") or []
+        rows = r.get("rows") or []
+        base = "—" if r.get("scope") == "instance" else r.get("target", "—")
+        ancre = r["id"].replace("_", "-")
+
+        if "severite" in columns and "constat" in columns:
+            for row in rows:
+                constat_value = row.get("constat")
+                constat = str(constat_value) if constat_value is not None else f"{r['id']} : {len(rows)} ligne(s)"
+                entries.append({
+                    "severite": _normalize_severity(row.get("severite")),
+                    "constat": constat,
+                    "id": r["id"],
+                    "base": base,
+                    "ancre": ancre,
+                })
+            continue
+
+        expect_rows = r.get("expect_rows")
+        if expect_rows is not None:
+            row_count = r.get("row_count")
+            if row_count is None:
+                row_count = len(rows)
+            if row_count != expect_rows:
+                entries.append({
+                    "severite": _normalize_severity(r.get("severity_if_unexpected")),
+                    "constat": f"{row_count} ligne(s) trouvée(s), {expect_rows} attendue(s).",
+                    "id": r["id"],
+                    "base": base,
+                    "ancre": ancre,
+                })
+
+    return entries
+
+
+def _synthese_table(entries: list[dict], severite: str) -> list[str]:
+    filtered = [e for e in entries if e["severite"] == severite]
+    if not filtered:
+        return []
+
+    by_id: OrderedDict[str, list[dict]] = OrderedDict()
+    for e in filtered:
+        by_id.setdefault(e["id"], []).append(e)
+
+    lines = ["| Base | Contrôle | Constat |", "|---|---|---|"]
+    for qid, group in by_id.items():
+        for e in group[:_SYNTHESE_MAX_PAR_CONTROLE]:
+            constat = e["constat"].replace("|", "\\|")
+            lines.append(f"| {e['base']} | [{qid}](#{e['ancre']}) | {constat} |")
+        reste = len(group) - _SYNTHESE_MAX_PAR_CONTROLE
+        if reste > 0:
+            lines.append(f"| | | _… et {reste} autre(s) pour \\`{qid}\\` — voir la section détaillée._ |")
+    return lines + [""]
 
 
 def _md_table(columns: list[str], rows: list[dict]) -> str:
@@ -101,6 +196,32 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
         "\n---\n",
     ]
 
+    # ── Synthèse ─────────────────────────────────────────────────────────────
+    errors = [r for r in all_results if r["status"] == "error"]
+
+    if _synthese_engagee(all_results):
+        entries = extraire_synthese(all_results)
+        bloquants = [e for e in entries if e["severite"] == "bloquant"]
+        vigilances = [e for e in entries if e["severite"] == "vigilance"]
+
+        lines.append("## Synthèse\n")
+        if errors:
+            lines.append(
+                f"⚠️ {len(errors)} contrôle(s) n'ont pas pu s'exécuter — voir Points d'attention. "
+                "La synthèse est incomplète.\n"
+            )
+        if not bloquants and not vigilances:
+            lines.append("_Aucun bloquant ni point de vigilance détecté._\n")
+        else:
+            lines.append(f"**{len(bloquants)} bloquant(s) · {len(vigilances)} point(s) de vigilance**\n")
+            if bloquants:
+                lines.append("### Bloquants\n")
+                lines += _synthese_table(bloquants, "bloquant")
+            if vigilances:
+                lines.append("### Points de vigilance\n")
+                lines += _synthese_table(vigilances, "vigilance")
+        lines.append("---\n")
+
     # ── Sommaire ─────────────────────────────────────────────────────────────
     lines.append("## Sommaire\n")
     for qid, group in by_id.items():
@@ -133,7 +254,6 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
         lines.append("---\n")
 
     # ── Points d'attention ───────────────────────────────────────────────────
-    errors = [r for r in all_results if r["status"] == "error"]
     su_skipped = [
         r for r in all_results
         if r["status"] == "skipped" and r.get("requires_superuser")

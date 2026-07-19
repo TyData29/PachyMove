@@ -157,7 +157,15 @@ queries:
     tags: [schema]
     requires_superuser: false
     skip_reason_if_disabled: "Raison affichée si enabled: false"
+    expect_rows: 0              # optionnel : nombre de lignes attendu
+    severity_if_unexpected: bloquant  # optionnel (défaut vigilance) : bloquant | vigilance | info
 ```
+
+### Synthèse (bloquants / vigilance)
+
+Si au moins une requête déclare `expect_rows`, ou expose des colonnes `severite`/`constat` dans son résultat, le rapport affiche une section **Synthèse** en tête (avant le sommaire) : nombre de bloquants et points de vigilance, avec renvoi vers le détail. La convention de colonnes (`severite`/`constat`) prime sur `expect_rows` quand une requête a les deux — elle donne un message précis plutôt que générique.
+
+**Tant qu'aucune requête n'utilise ce mécanisme, la section n'apparaît pas** — le rapport reste identique à avant, volontairement : afficher « aucun bloquant » sans avoir calibré une seule requête donnerait un faux sentiment de sécurité. Voir `.tydata/specs/specs_verdicts.md`.
 
 ---
 
