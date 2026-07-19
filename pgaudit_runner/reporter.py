@@ -71,7 +71,9 @@ def extraire_synthese(results: list[dict]) -> list[dict]:
 
         expect_rows = r.get("expect_rows")
         if expect_rows is not None:
-            row_count = r.get("row_count") or 0
+            row_count = r.get("row_count")
+            if row_count is None:
+                row_count = len(rows)
             if row_count != expect_rows:
                 entries.append({
                     "severite": _normalize_severity(r.get("severity_if_unexpected")),
