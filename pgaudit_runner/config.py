@@ -66,7 +66,7 @@ def load_manifest(
                 skip_reason_if_disabled=q.get("skip_reason_if_disabled"),
                 statement_timeout_ms=q.get("statement_timeout_ms", default_timeout),
                 expect_rows=q.get("expect_rows"),
-                severity_if_unexpected=q.get("severity_if_unexpected", "vigilance"),
+                severity_if_unexpected=q.get("severity_if_unexpected") or "vigilance",
                 sql=sql,
             )
         )
