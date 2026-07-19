@@ -63,6 +63,7 @@ pgaudit-runner report `
 |---|---|
 | `--tags fdw,inventaire` | N'exécute que les requêtes portant ces tags |
 | `--tags bloquant` | Run rapide « est-ce que je peux y aller » (Famille A, module Pré-audit migration) |
+| `--tags delta` | Delta 15→18 (Famille B, module Pré-audit migration) |
 | `--only list_databases,roles` | Exécute uniquement ces ids |
 | `--exclude postgis_version` | Exclut ces ids |
 | `--maintenance-db postgres` | Base de connexion pour les requêtes `scope: instance` (défaut : `postgres`) |
