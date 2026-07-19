@@ -8,7 +8,7 @@ import psycopg
 import pytest
 
 from pgaudit_runner.models import QuerySpec
-from pgaudit_runner.runner import _WRITE_RE, _coerce, run_query
+from pgaudit_runner.runner import _WRITE_RE, _coerce, _strip_sql_noise, run_query
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,16 +19,52 @@ def _spec(sql: str, **overrides) -> QuerySpec:
     return QuerySpec(**defaults)
 
 
+def _mock_conn(rows=None) -> MagicMock:
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.description = [SimpleNamespace(name="x")]
+    cur.fetchall.return_value = rows or [(1,)]
+    conn.execute.return_value = cur
+    return conn
+
+
 def test_read_only_guard_rejects_write_keyword():
     result = run_query(conn=None, spec=_spec("DROP TABLE foo"), target="instance", read_only=True)
     assert result.status == "error"
     assert "read_only" in result.error.message
 
 
-def test_read_only_guard_rejects_keyword_inside_comment():
-    # Régression : le garde-fou est purement textuel et scanne aussi les commentaires
-    # (rencontré en pratique avec "CREATE" dans un commentaire -- voir CLAUDE.md).
-    sql = "-- on pourrait faire un CREATE INDEX ici\nSELECT 1"
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 1 -- ne pas CREATE ici",
+        "SELECT 'CREATE' AS x",
+        "SELECT date_creation FROM t",
+        "SELECT * FROM t /* GRANT */",
+    ],
+    ids=["line_comment", "string_literal", "identifier_substring", "block_comment"],
+)
+def test_read_only_guard_accepts_legitimate_queries(sql):
+    # Spec detection_migration §3 : un mot-clé d'écriture dans un commentaire, un
+    # littéral ou une sous-chaîne d'identifiant ne doit pas rejeter la requête.
+    result = run_query(conn=_mock_conn(), spec=_spec(sql), target="instance", read_only=True)
+    assert result.status == "success"
+
+
+def test_read_only_guard_not_fooled_by_dashdash_inside_literal():
+    # Un littéral contenant '--' ne doit pas masquer un DROP qui le suit réellement —
+    # justifie l'ordre littéraux-puis-commentaires de _strip_sql_noise().
+    sql = "SELECT 'a--b' AS x; DROP TABLE t"
+    result = run_query(conn=None, spec=_spec(sql), target="instance", read_only=True)
+    assert result.status == "error"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    ["CREATE TABLE t (i int)", "SELECT 1; DROP TABLE t"],
+    ids=["create_table", "chained_drop"],
+)
+def test_read_only_guard_rejects_real_write_statements(sql):
     result = run_query(conn=None, spec=_spec(sql), target="instance", read_only=True)
     assert result.status == "error"
 
@@ -86,10 +122,11 @@ def test_coerce_passthrough_and_binary(value, expected):
 
 
 def test_no_write_keywords_leak_into_real_query_files():
-    """Le garde-fou de run_query() scanne le texte SQL brut (commentaires inclus) —
-    aucune requête du dépôt ne doit contenir un mot-clé d'écriture, y compris en commentaire."""
+    """Même vérification que le garde-fou réel (littéraux/commentaires retirés avant
+    le scan) — un littéral légitime comme 'CREATE' (privilege_type) ne doit pas
+    faire échouer ce test, seul un vrai mot-clé d'écriture doit le faire."""
     offenders = [
         f for f in (REPO_ROOT / "queries").rglob("*.sql")
-        if _WRITE_RE.search(f.read_text(encoding="utf-8"))
+        if _WRITE_RE.search(_strip_sql_noise(f.read_text(encoding="utf-8")))
     ]
     assert not offenders, f"mots-clés d'écriture détectés dans : {offenders}"

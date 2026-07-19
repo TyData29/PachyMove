@@ -47,6 +47,67 @@ queries:
     tags: [auth, securite]
     skip_reason_if_disabled: "Nécessite un accès superuser (pg_authid) — MD5 supprimé en PG17+"
 
+  # -- Détection bloquants (Famille A) ------------------------------------------
+
+  - id: database_collation_version
+    title: "Version de collation par défaut des bases (vs système)"
+    file: instance/database_collation_version.sql
+    scope: instance
+    enabled: true
+    tags: [bloquant, collation]
+
+  - id: data_checksums
+    title: "Sommes de contrôle désactivées"
+    file: instance/data_checksums.sql
+    scope: instance
+    enabled: true
+    tags: [bloquant, pg_upgrade]
+
+  - id: prepared_xacts
+    title: "Transactions préparées en attente"
+    file: instance/prepared_xacts.sql
+    scope: instance
+    enabled: true
+    tags: [bloquant, pg_upgrade]
+
+  - id: tablespaces
+    title: "Tablespaces personnalisés (hors pg_default/pg_global)"
+    file: instance/tablespaces.sql
+    scope: instance
+    enabled: true
+    tags: [bloquant, pg_upgrade]
+
+  - id: db_encoding_locale
+    title: "Bases en SQL_ASCII, non connectables ou marquées invalides"
+    file: instance/db_encoding_locale.sql
+    scope: instance
+    enabled: true
+    tags: [bloquant]
+
+  - id: shared_preload_libraries
+    title: "Bibliothèques préchargées (shared_preload_libraries)"
+    file: instance/shared_preload_libraries.sql
+    scope: instance
+    enabled: true
+    tags: [inventaire]
+
+  # -- Delta 15 → 18 (Famille B) -------------------------------------------------
+
+  - id: removed_gucs
+    title: "Paramètres serveur supprimés ou renommés (PG15-PG17)"
+    file: instance/removed_gucs.sql
+    scope: instance
+    enabled: true
+    tags: [delta]
+
+  - id: md5_roles
+    title: "Rôles avec mot de passe MD5 (pg_authid)"
+    file: instance/md5_roles.sql
+    scope: instance
+    enabled: true
+    requires_superuser: true
+    tags: [delta, securite]
+
   # ── Database ────────────────────────────────────────────────────────────────
 
   - id: extensions
@@ -97,3 +158,63 @@ queries:
     scope: database
     enabled: true
     tags: [replication, migration]
+
+  # -- Détection bloquants (Famille A) ------------------------------------------
+
+  - id: collation_version_mismatch
+    title: "Collations dont la version système a changé"
+    file: database/collation_version_mismatch.sql
+    scope: database
+    enabled: true
+    tags: [bloquant, collation]
+
+  - id: reg_type_columns
+    title: "Colonnes de type reg* (OID non portables entre instances)"
+    file: database/reg_type_columns.sql
+    scope: database
+    enabled: true
+    tags: [bloquant]
+
+  - id: invalid_indexes
+    title: "Index invalides, non prêts ou non live"
+    file: database/invalid_indexes.sql
+    scope: database
+    enabled: true
+    tags: [bloquant]
+
+  - id: catalog_dependent_views
+    title: "Vues/vues matérialisées dépendant du catalogue système"
+    file: database/catalog_dependent_views.sql
+    scope: database
+    enabled: true
+    tags: [bloquant]
+
+  # -- Delta 15 → 18 (Famille B) -------------------------------------------------
+
+  - id: functions_without_search_path
+    title: "Fonctions indexées/matérialisées sans search_path fixé"
+    file: database/functions_without_search_path.sql
+    scope: database
+    enabled: true
+    tags: [delta]
+
+  - id: removed_contribs
+    title: "Extensions contrib supprimées (ex. adminpack)"
+    file: database/removed_contribs.sql
+    scope: database
+    enabled: true
+    tags: [delta]
+
+  - id: unlogged_partitioned
+    title: "Tables partitionnées UNLOGGED (interdit en PG18)"
+    file: database/unlogged_partitioned.sql
+    scope: database
+    enabled: true
+    tags: [delta]
+
+  - id: public_schema_create_acl
+    title: "Droit CREATE encore accordé à PUBLIC sur le schéma public"
+    file: database/public_schema_create_acl.sql
+    scope: database
+    enabled: true
+    tags: [delta, securite]
