@@ -14,7 +14,8 @@ _WRITE_RE = re.compile(
     re.IGNORECASE,
 )
 
-_STRING_LITERAL_RE = re.compile(r"'(?:[^']|'')*'")
+_DOLLAR_QUOTED_RE = re.compile(r"\$([A-Za-z_][A-Za-z_0-9]*)?\$.*?\$\1\$", re.DOTALL)
+_STRING_LITERAL_RE = re.compile(r"(?:E)?'(?:[^'\\]|\\.|'')*'")
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _LINE_COMMENT_RE = re.compile(r"--[^\n]*")
 
@@ -27,6 +28,7 @@ def _strip_sql_noise(sql: str) -> str:
     commentaire — sinon tout ce qui suit dans la requête (y compris un DROP/GRANT
     réel) serait effacé avec lui et échapperait au scan.
     """
+    sql = _DOLLAR_QUOTED_RE.sub("$$", sql)
     sql = _STRING_LITERAL_RE.sub("''", sql)
     sql = _BLOCK_COMMENT_RE.sub(" ", sql)
     sql = _LINE_COMMENT_RE.sub("", sql)
