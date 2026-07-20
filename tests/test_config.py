@@ -50,6 +50,48 @@ queries:
     assert spec.requires_superuser is False
     assert spec.statement_timeout_ms == 12345
     assert spec.sql == "SELECT 1"
+    assert spec.side == "source"
+    assert spec.applies_to == []
+
+
+def test_load_manifest_reads_side_and_applies_to(tmp_path: Path):
+    _write(tmp_path, "queries/instance/ping.sql", "SELECT 1")
+    manifest = _write(
+        tmp_path,
+        "manifests/m.yaml",
+        """
+queries:
+  - id: ping
+    title: "Ping"
+    file: instance/ping.sql
+    scope: instance
+    side: both
+    applies_to: [pg_upgrade]
+""",
+    )
+
+    _config, specs = load_manifest(manifest, tmp_path / "queries")
+
+    assert specs[0].side == "both"
+    assert specs[0].applies_to == ["pg_upgrade"]
+
+
+def test_invalid_side_raises(tmp_path: Path):
+    _write(tmp_path, "queries/instance/ping.sql", "SELECT 1")
+    manifest = _write(
+        tmp_path,
+        "manifests/m.yaml",
+        """
+queries:
+  - id: ping
+    title: "Ping"
+    file: instance/ping.sql
+    scope: instance
+    side: bogus
+""",
+    )
+    with pytest.raises(ConfigError, match="side invalide"):
+        load_manifest(manifest, tmp_path / "queries")
 
 
 def test_missing_required_field_raises(tmp_path: Path):

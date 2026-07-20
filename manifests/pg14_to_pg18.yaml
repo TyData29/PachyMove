@@ -22,7 +22,24 @@ queries:
     file: instance/server_config.sql
     scope: instance
     enabled: true
+    side: both
     tags: [configuration]
+
+  - id: available_extensions
+    title: "Extensions disponibles (comparaison source/cible)"
+    file: instance/available_extensions.sql
+    scope: instance
+    enabled: true
+    side: both
+    tags: [inventaire, extensions]
+
+  - id: collation_versions
+    title: "Versions de collation (comparaison source/cible)"
+    file: instance/collation_versions.sql
+    scope: instance
+    enabled: true
+    side: both
+    tags: [collation]
 
   - id: roles
     title: "Rôles PostgreSQL"
@@ -62,6 +79,7 @@ queries:
     scope: instance
     enabled: true
     tags: [bloquant, pg_upgrade]
+    applies_to: [pg_upgrade]
 
   - id: prepared_xacts
     title: "Transactions préparées en attente"
@@ -69,6 +87,7 @@ queries:
     scope: instance
     enabled: true
     tags: [bloquant, pg_upgrade]
+    applies_to: [pg_upgrade]
 
   - id: tablespaces
     title: "Tablespaces personnalisés (hors pg_default/pg_global)"
@@ -76,6 +95,7 @@ queries:
     scope: instance
     enabled: true
     tags: [bloquant, pg_upgrade]
+    applies_to: [pg_upgrade]
 
   - id: db_encoding_locale
     title: "Bases en SQL_ASCII, non connectables ou marquées invalides"
@@ -174,6 +194,7 @@ queries:
     scope: database
     enabled: true
     tags: [bloquant]
+    applies_to: [dump_restore]
 
   - id: invalid_indexes
     title: "Index invalides, non prêts ou non live"

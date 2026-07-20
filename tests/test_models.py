@@ -37,7 +37,7 @@ def test_to_json_dict_is_json_serializable_with_error_and_none_fields():
         manifest_name="test",
         started_at="2026-01-01T00:00:00+00:00",
         finished_at=None,
-        connection=ConnectionInfo(host="h", port=5432, user="u"),
+        source=ConnectionInfo(host="h", port=5432, user="u"),
         selection=SelectionInfo(dry_run=True),
         summary=RunSummary(total=1, error=1),
     )
@@ -53,6 +53,10 @@ def test_to_json_dict_is_json_serializable_with_error_and_none_fields():
     decoded = json.loads(json.dumps(payload, ensure_ascii=False))
 
     assert decoded["metadata"]["finished_at"] is None
-    assert decoded["metadata"]["connection"]["host"] == "h"
+    assert decoded["metadata"]["source"]["host"] == "h"
+    assert decoded["metadata"]["target"] is None
+    assert decoded["metadata"]["same_server"] is None
     assert decoded["results"][0]["status"] == "error"
     assert decoded["results"][0]["error"]["message"] == "rejetée"
+    assert decoded["results"][0]["side"] == "source"
+    assert decoded["results"][0]["applies_to"] == []

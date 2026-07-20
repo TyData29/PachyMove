@@ -48,6 +48,12 @@ def load_manifest(
                 f"'{qid}' : scope invalide '{q['scope']}' (attendu : instance | database)"
             )
 
+        side = q.get("side", "source")
+        if side not in ("source", "target", "both"):
+            raise ConfigError(
+                f"'{qid}' : side invalide '{side}' (attendu : source | target | both)"
+            )
+
         sql_path = queries_dir / q["file"]
         if not sql_path.exists():
             raise ConfigError(f"'{qid}' : fichier SQL introuvable : {sql_path}")
@@ -67,6 +73,8 @@ def load_manifest(
                 statement_timeout_ms=q.get("statement_timeout_ms", default_timeout),
                 expect_rows=q.get("expect_rows"),
                 severity_if_unexpected=q.get("severity_if_unexpected") or "vigilance",
+                side=side,
+                applies_to=q.get("applies_to", []),
                 sql=sql,
             )
         )

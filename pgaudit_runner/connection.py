@@ -14,11 +14,15 @@ def resolve_password(
     user: str,
     dbname: str,
     service: Optional[str] = None,
+    label: Optional[str] = None,
 ) -> Optional[str]:
     """
     Tente une connexion sans mot de passe explicite (libpq gère PGPASSWORD et ~/.pgpass).
     Si l'authentification échoue, demande le mot de passe interactivement.
     Retourne le mot de passe saisi, ou None si libpq le gère lui-même.
+
+    `label` (ex. "source"/"cible") distingue les deux prompts quand une cible est
+    définie ; laissé à None, le prompt est identique à avant (mono-serveur).
     """
     if os.environ.get("PGPASSWORD"):
         return None
@@ -33,7 +37,8 @@ def resolve_password(
     except psycopg.OperationalError as e:
         msg = str(e).lower()
         if "password" in msg or "authentication" in msg:
-            return getpass.getpass(f"Mot de passe PostgreSQL ({user}@{host}:{port}) : ")
+            prefix = f"Mot de passe {label} " if label else "Mot de passe "
+            return getpass.getpass(f"{prefix}PostgreSQL ({user}@{host}:{port}) : ")
         raise
 
 

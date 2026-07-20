@@ -49,6 +49,7 @@ def run_query(
     spec: QuerySpec,
     target: str,
     read_only: bool = True,
+    side: str = "source",
 ) -> QueryResult:
     assert spec.sql is not None
 
@@ -63,6 +64,8 @@ def run_query(
             requires_superuser=spec.requires_superuser,
             expect_rows=spec.expect_rows,
             severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
             error=ErrorDetail(
                 message="Requête rejetée : mot-clé d'écriture détecté (mode read_only actif)",
                 full_traceback="",
@@ -98,6 +101,8 @@ def run_query(
             row_count=len(rows),
             expect_rows=spec.expect_rows,
             severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
         )
 
     except psycopg.Error as e:
@@ -116,6 +121,8 @@ def run_query(
             requires_superuser=spec.requires_superuser,
             expect_rows=spec.expect_rows,
             severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
             error=ErrorDetail(
                 sqlstate=getattr(e, "sqlstate", None),
                 message=str(e).splitlines()[0],

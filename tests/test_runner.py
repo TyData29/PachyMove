@@ -106,6 +106,30 @@ def test_run_query_captures_psycopg_error():
     assert result.error.message == "relation does not exist"
 
 
+def test_run_query_defaults_side_to_source():
+    result = run_query(conn=_mock_conn(), spec=_spec("SELECT 1"), target="instance", read_only=True)
+    assert result.side == "source"
+
+
+def test_run_query_propagates_explicit_side_and_applies_to_on_success():
+    spec = _spec("SELECT 1", applies_to=["pg_upgrade"])
+    result = run_query(conn=_mock_conn(), spec=spec, target="instance", read_only=True, side="target")
+    assert result.side == "target"
+    assert result.applies_to == ["pg_upgrade"]
+
+
+def test_run_query_propagates_side_on_read_only_rejection():
+    result = run_query(conn=None, spec=_spec("DROP TABLE foo"), target="instance", read_only=True, side="target")
+    assert result.side == "target"
+
+
+def test_run_query_propagates_side_on_error():
+    conn = MagicMock()
+    conn.execute.side_effect = psycopg.Error("boom")
+    result = run_query(conn=conn, spec=_spec("SELECT 1"), target="db1", read_only=True, side="target")
+    assert result.side == "target"
+
+
 @pytest.mark.parametrize(
     "value,expected",
     [

@@ -39,6 +39,17 @@ def cli():
 @click.option("--only", default="", help="Exécuter uniquement ces ids (virgule-séparés)")
 @click.option("--exclude", default="", help="Exclure ces ids (virgule-séparés)")
 @click.option("--service", default=None, help="Nom de service pg_service.conf")
+@click.option("--target-host", default=None, help="Hôte PostgreSQL cible")
+@click.option("--target-port", default=None, type=int, help="Port cible")
+@click.option("--target-user", default=None, help="Utilisateur cible")
+@click.option("--target-service", default=None, help="Nom de service pg_service.conf cible")
+@click.option("--target-maintenance-db", default=None, help="Base de connexion cible pour scope:instance")
+@click.option("--target-dbnames", default=None, help="Bases ciblées côté cible (séparées par virgule)")
+@click.option(
+    "--migration-method", default=None,
+    type=click.Choice(["pg_upgrade", "dump_restore"]),
+    help="Force l'interprétation de la méthode de migration en cas d'ambiguïté (même serveur)",
+)
 @click.option("--dry-run", is_flag=True, help="Simule sans connexion réelle")
 def collect_cmd(
     host: str,
@@ -52,12 +63,28 @@ def collect_cmd(
     only: str,
     exclude: str,
     service: Optional[str],
+    target_host: Optional[str],
+    target_port: Optional[int],
+    target_user: Optional[str],
+    target_service: Optional[str],
+    target_maintenance_db: Optional[str],
+    target_dbnames: Optional[str],
+    migration_method: Optional[str],
     dry_run: bool,
 ) -> None:
     """Exécute les requêtes d'audit et produit un JSON horodaté."""
     queries_dir = manifest.parent.parent / "queries"
     if not queries_dir.exists():
         raise click.ClickException(f"Dossier queries introuvable : {queries_dir}")
+
+    # Une cible n'existe que si au moins un --target-* a été passé explicitement
+    # (tous par défaut None) — l'héritage ci-dessous ne doit jamais en créer une
+    # qui n'a pas été demandée.
+    target_defined = any(
+        v is not None
+        for v in (target_host, target_port, target_user, target_service,
+                  target_maintenance_db, target_dbnames)
+    )
 
     try:
         output_file = collect(
@@ -74,6 +101,13 @@ def collect_cmd(
             exclude=_csv(exclude),
             dry_run=dry_run,
             service=service,
+            target_host=(target_host or host) if target_defined else None,
+            target_port=(target_port or port) if target_defined else None,
+            target_user=(target_user or user) if target_defined else None,
+            target_service=target_service,
+            target_maintenance_db=(target_maintenance_db or maintenance_db) if target_defined else None,
+            target_dbnames=(_csv(target_dbnames) if target_dbnames else _csv(dbnames)) if target_defined else None,
+            migration_method=migration_method,
         )
         click.echo(f"Audit sauvegardé : {output_file}")
     except Exception as exc:
