@@ -17,6 +17,10 @@ class QuerySpec:
     statement_timeout_ms: Optional[int] = None
     expect_rows: Optional[int] = None
     severity_if_unexpected: str = "vigilance"
+    side: str = "source"  # "source" | "target" | "both"
+    applies_to: list[str] = field(default_factory=list)  # "pg_upgrade" | "dump_restore" ; vide = les deux
+    min_server_version: Optional[int] = None  # format server_version_num (ex. 150000 = PG 15.0)
+    max_server_version: Optional[int] = None  # format server_version_num (ex. 149999 = PG < 15.0)
     sql: Optional[str] = None  # chargé depuis le fichier .sql
 
 
@@ -45,6 +49,8 @@ class QueryResult:
     skip_reason: Optional[str] = None
     expect_rows: Optional[int] = None
     severity_if_unexpected: str = "vigilance"
+    side: str = "source"
+    applies_to: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -78,9 +84,13 @@ class RunMetadata:
     manifest_name: str
     started_at: str
     finished_at: Optional[str]
-    connection: ConnectionInfo
+    source: ConnectionInfo
     selection: SelectionInfo
     summary: RunSummary
+    target: Optional[ConnectionInfo] = None
+    same_server: Optional[bool] = None  # dérivé de la topologie ; None = pas de cible
+    target_error: Optional[str] = None  # motif si la connexion cible a échoué
+    migration_method: Optional[str] = None  # override CLI facultatif : "pg_upgrade" | "dump_restore"
 
 
 def to_json_dict(metadata: RunMetadata, results: list[QueryResult]) -> dict:

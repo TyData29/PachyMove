@@ -11,10 +11,7 @@ Boîte à outils pour préparer une migration PostgreSQL majeure (ex. PG14 → P
 | **Pré-audit migration** | `pg14_to_pg18.yaml` | Inventaire (bases, config serveur, rôles, extensions, FDW, colonnes générées, publications…) **+ détection des bloquants de migration** : Famille A (`--tags bloquant`, ex. collations, checksums, index invalides) et Famille B, delta 15→18 (`--tags delta`, ex. `search_path`, droits par défaut sur `public`) |
 | **Audit des droits** | `rights_audit.yaml` | Cartographie des privilèges PostgreSQL — ACL directs, hérités de groupe (résolution récursive), propriété, signalement RLS. Générique, réutilisable hors contexte de migration. |
 
-Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`. La partie diff (comparer la matrice de droits à une cible YAML et générer les `GRANT`/`REVOKE` correctifs) est volontairement hors scope de l'audit des droits actuel — nature différente (comparaison + génération de code, pas lecture seule + rapport), à construire en outil séparé une fois une matrice réelle validée en mission.
-
-Convention pour la détection des bloquants : **zéro ligne renvoyée = sain**. `--tags bloquant` donne un run rapide de type « est-ce que je peux y aller ».
-Note : `shared_preload_libraries` est un inventaire (renvoie des lignes même quand tout va bien) ; `public_schema_create_acl` est une requête informative taguée `delta` ; voir `.tydata/specs/specs_detection_migration_1.md`.
+Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`.
 
 ---
 
@@ -163,6 +160,9 @@ queries:
 
 ### Synthèse (bloquants / vigilance)
 
+Convention pour la détection des bloquants : **zéro ligne renvoyée = sain**. `--tags bloquant` donne un run rapide de type « est-ce que je peux y aller ».
+Note : `shared_preload_libraries` est un inventaire (renvoie des lignes même quand tout va bien) ; `public_schema_create_acl` est une requête informative taguée `delta` ; voir `.tydata/specs/specs_detection_migration_1.md`.
+
 Si au moins une requête déclare `expect_rows`, ou expose des colonnes `severite`/`constat` dans son résultat, le rapport affiche une section **Synthèse** en tête (avant le sommaire) : nombre de bloquants et points de vigilance, avec renvoi vers le détail. La convention de colonnes (`severite`/`constat`) prime sur `expect_rows` quand une requête a les deux — elle donne un message précis plutôt que générique.
 
 **Tant qu'aucune requête n'utilise ce mécanisme, la section n'apparaît pas** — le rapport reste identique à avant, volontairement : afficher « aucun bloquant » sans avoir calibré une seule requête donnerait un faux sentiment de sécurité. Voir `.tydata/specs/specs_verdicts.md`.
@@ -174,3 +174,8 @@ Si au moins une requête déclare `expect_rows`, ou expose des colonnes `severit
 - `read_only: true` (défaut) : toute requête contenant `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT` ou `REVOKE` est rejetée avant exécution (garde-fou purement textuel).
 - Le mot de passe n'apparaît jamais dans le JSON de sortie ni dans les logs.
 - Recommandation : utiliser un rôle PostgreSQL en lecture seule côté serveur, en complément du garde-fou applicatif (néanmoins, certaines requêtes nécessitant un accès superuser seront bypassées).
+
+## Limitations
+
+- L'outil est conçu pour l'audit et la génération de rapports, pas pour exécuter des migrations. Il ne modifie jamais la base.
+- Par exemple, il n'est pas possible de comparer la matrice de droits à une cible YAML et générer les `GRANT`/`REVOKE` correctifs — c'est volontairement hors scope de l'audit des droits car nature différente (comparaison + génération de code, pas lecture seule + rapport). Cela pourra éventuellement devenir un outil séparé une fois une matrice réelle validée.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import traceback
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 import psycopg
 
@@ -44,13 +44,53 @@ def _coerce(v: Any) -> Any:
     return str(v)
 
 
+def _version_gate_reason(spec: QuerySpec, server_version_num: Optional[int]) -> Optional[str]:
+    """La requête est-elle hors de la plage de versions qu'elle déclare ?
+
+    `server_version_num` absent (None) : on ne peut pas savoir, on n'exclut rien
+    plutôt que de deviner. Format server_version_num (ex. 150003 pour PG 15.3).
+    """
+    if server_version_num is None:
+        return None
+    if spec.min_server_version is not None and server_version_num < spec.min_server_version:
+        return (
+            f"nécessite PostgreSQL ≥ {spec.min_server_version // 10000} "
+            f"(serveur détecté : {server_version_num // 10000})"
+        )
+    if spec.max_server_version is not None and server_version_num > spec.max_server_version:
+        return (
+            f"nécessite PostgreSQL ≤ {spec.max_server_version // 10000} "
+            f"(serveur détecté : {server_version_num // 10000})"
+        )
+    return None
+
+
 def run_query(
     conn: psycopg.Connection,
     spec: QuerySpec,
     target: str,
     read_only: bool = True,
+    side: str = "source",
+    server_version_num: Optional[int] = None,
 ) -> QueryResult:
     assert spec.sql is not None
+
+    version_skip = _version_gate_reason(spec, server_version_num)
+    if version_skip:
+        return QueryResult(
+            id=spec.id,
+            title=spec.title,
+            scope=spec.scope,
+            target=target,
+            sql=spec.sql,
+            status="skipped",
+            skip_reason=version_skip,
+            requires_superuser=spec.requires_superuser,
+            expect_rows=spec.expect_rows,
+            severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
+        )
 
     if read_only and _WRITE_RE.search(_strip_sql_noise(spec.sql)):
         return QueryResult(
@@ -63,6 +103,8 @@ def run_query(
             requires_superuser=spec.requires_superuser,
             expect_rows=spec.expect_rows,
             severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
             error=ErrorDetail(
                 message="Requête rejetée : mot-clé d'écriture détecté (mode read_only actif)",
                 full_traceback="",
@@ -98,6 +140,8 @@ def run_query(
             row_count=len(rows),
             expect_rows=spec.expect_rows,
             severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
         )
 
     except psycopg.Error as e:
@@ -116,6 +160,8 @@ def run_query(
             requires_superuser=spec.requires_superuser,
             expect_rows=spec.expect_rows,
             severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
             error=ErrorDetail(
                 sqlstate=getattr(e, "sqlstate", None),
                 message=str(e).splitlines()[0],

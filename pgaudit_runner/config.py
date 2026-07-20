@@ -48,6 +48,26 @@ def load_manifest(
                 f"'{qid}' : scope invalide '{q['scope']}' (attendu : instance | database)"
             )
 
+        side = q.get("side", "source")
+        if side not in ("source", "target", "both"):
+            raise ConfigError(
+                f"'{qid}' : side invalide '{side}' (attendu : source | target | both)"
+            )
+
+        min_server_version = q.get("min_server_version")
+        if min_server_version is not None and not isinstance(min_server_version, int):
+            raise ConfigError(
+                f"'{qid}' : min_server_version invalide '{min_server_version}' "
+                "(attendu : entier au format server_version_num, ex. 150000 pour PG 15.0)"
+            )
+
+        max_server_version = q.get("max_server_version")
+        if max_server_version is not None and not isinstance(max_server_version, int):
+            raise ConfigError(
+                f"'{qid}' : max_server_version invalide '{max_server_version}' "
+                "(attendu : entier au format server_version_num, ex. 149999 pour PG < 15.0)"
+            )
+
         sql_path = queries_dir / q["file"]
         if not sql_path.exists():
             raise ConfigError(f"'{qid}' : fichier SQL introuvable : {sql_path}")
@@ -67,6 +87,10 @@ def load_manifest(
                 statement_timeout_ms=q.get("statement_timeout_ms", default_timeout),
                 expect_rows=q.get("expect_rows"),
                 severity_if_unexpected=q.get("severity_if_unexpected") or "vigilance",
+                side=side,
+                applies_to=q.get("applies_to", []),
+                min_server_version=min_server_version,
+                max_server_version=max_server_version,
                 sql=sql,
             )
         )

@@ -33,7 +33,8 @@ def export_csv(audit_json: Path, output_dir: Path) -> list[Path]:
             continue
         target = _safe_filename_part(r.get("target"))
         qid = _safe_filename_part(r.get("id"))
-        csv_path = output_dir / f"{qid}__{target}.csv"
+        side = _safe_filename_part(r.get("side", "source"))
+        csv_path = output_dir / f"{qid}__{side}__{target}.csv"
         with open(csv_path, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=r["columns"], extrasaction="ignore")
             writer.writeheader()

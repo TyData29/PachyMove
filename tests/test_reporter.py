@@ -6,7 +6,7 @@ from pathlib import Path
 from pgaudit_runner.reporter import extraire_synthese, generate_report
 
 
-def _audit_json(tmp_path: Path, results: list[dict]) -> Path:
+def _audit_json(tmp_path: Path, results: list[dict], **meta_overrides) -> Path:
     metadata = {
         "manifest_name": "Test",
         "started_at": "2026-01-01T10:00:00+00:00",
@@ -18,6 +18,7 @@ def _audit_json(tmp_path: Path, results: list[dict]) -> Path:
             "error": sum(1 for r in results if r["status"] == "error"),
         },
     }
+    metadata.update(meta_overrides)
     path = tmp_path / "audit.json"
     path.write_text(json.dumps({"metadata": metadata, "results": results}), encoding="utf-8")
     return path
@@ -226,3 +227,110 @@ def test_extraire_synthese_instance_scope_base_is_dash():
         _result(id="q1", scope="instance", target="instance", row_count=1, expect_rows=0),
     ])
     assert entries[0]["base"] == "—"
+
+
+# ── Deux serveurs (specs_deux_serveurs.md) ───────────────────────────────────
+
+
+def test_report_side_both_scope_instance_renders_source_and_cible_blocks(tmp_path: Path):
+    # Non-régression du bug corrigé : seul le premier résultat d'un groupe
+    # scope:instance était rendu ("r = first") — un side:both y perdait
+    # silencieusement son résultat côté cible.
+    audit = _audit_json(tmp_path, [
+        _result(id="q1", scope="instance", target="instance", side="source",
+                columns=["n"], rows=[{"n": 1}], row_count=1),
+        _result(id="q1", scope="instance", target="instance", side="target",
+                columns=["n"], rows=[{"n": 2}], row_count=1),
+    ], target={"host": "tgt", "port": 5432, "server_version": "PostgreSQL 18.0"})
+
+    report = generate_report(audit)
+
+    assert "**Source**" in report
+    assert "**Cible**" in report
+    assert "| 1 |" in report
+    assert "| 2 |" in report
+
+
+def test_report_side_target_without_source_skips_source_label(tmp_path: Path):
+    audit = _audit_json(tmp_path, [
+        _result(id="q1", scope="instance", target="instance", side="target",
+                status="skipped", skip_reason="aucune cible définie", columns=None, rows=None),
+    ])
+
+    report = generate_report(audit)
+
+    assert "**Source**" not in report
+    assert "**Cible**" in report
+
+
+def test_report_target_error_banner_shown(tmp_path: Path):
+    audit = _audit_json(
+        tmp_path,
+        [_result(id="q1", scope="instance", target="instance", side="target", status="error",
+                  error={"message": "connexion refusée", "sqlstate": None, "full_traceback": "..."})],
+        target={"host": "tgt", "port": 5432, "server_version": None},
+        target_error="connexion refusée",
+    )
+
+    report = generate_report(audit)
+
+    assert "injoignable" in report
+    assert "1 contrôle(s)" in report
+
+
+def test_report_topology_excludes_pg_upgrade_when_same_server_false(tmp_path: Path):
+    audit = _audit_json(
+        tmp_path,
+        [_result(id="data_checksums", scope="instance", target="instance",
+                  row_count=3, expect_rows=0, severity_if_unexpected="bloquant",
+                  applies_to=["pg_upgrade"])],
+        same_server=False,
+    )
+
+    report = generate_report(audit)
+
+    assert "_Aucun bloquant ni point de vigilance détecté._" in report
+    assert "sans objet pour dump/restore" in report
+
+
+def test_report_topology_override_excludes_when_same_server_ambiguous(tmp_path: Path):
+    audit = _audit_json(
+        tmp_path,
+        [_result(id="data_checksums", scope="instance", target="instance",
+                  row_count=3, expect_rows=0, severity_if_unexpected="bloquant",
+                  applies_to=["pg_upgrade"])],
+        same_server=True,
+        migration_method="dump_restore",
+    )
+
+    report = generate_report(audit)
+
+    assert "_Aucun bloquant ni point de vigilance détecté._" in report
+    assert "sans objet pour dump_restore" in report
+
+
+def test_report_no_topology_exclusion_when_ambiguous_and_no_override(tmp_path: Path):
+    audit = _audit_json(
+        tmp_path,
+        [_result(id="data_checksums", scope="instance", target="instance",
+                  row_count=3, expect_rows=0, severity_if_unexpected="bloquant",
+                  applies_to=["pg_upgrade"])],
+    )
+
+    report = generate_report(audit)
+
+    assert "### Bloquants" in report
+
+
+def test_report_old_json_without_target_fields_renders_identically(tmp_path: Path):
+    # Rétrocompatibilité stricte : ni "target", ni "same_server", ni "side" sur
+    # les résultats -> rapport identique à avant ce chantier.
+    audit = _audit_json(tmp_path, [
+        _result(id="q1", scope="database", target="db1", columns=["n"], rows=[{"n": 1}], row_count=1),
+    ])
+
+    report = generate_report(audit)
+
+    assert "**Source :**" not in report
+    assert "**Cible :**" not in report
+    assert "injoignable" not in report

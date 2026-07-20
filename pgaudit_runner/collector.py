@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,8 +9,8 @@ from typing import Optional
 
 import psycopg
 
-from .config import load_manifest
-from .connection import get_server_version, open_connection, resolve_password
+from .config import ConfigError, load_manifest
+from .connection import get_server_version, get_server_version_num, open_connection, resolve_password
 from .models import (
     ConnectionInfo,
     ErrorDetail,
@@ -41,7 +42,9 @@ def _select_queries(
     return result
 
 
-def _conn_error_result(spec: QuerySpec, target: str, exc: Exception) -> QueryResult:
+def _conn_error_result(
+    spec: QuerySpec, target: str, exc: Exception, side: str = "source"
+) -> QueryResult:
     return QueryResult(
         id=spec.id,
         title=spec.title,
@@ -50,10 +53,27 @@ def _conn_error_result(spec: QuerySpec, target: str, exc: Exception) -> QueryRes
         sql=spec.sql or "",
         status="error",
         requires_superuser=spec.requires_superuser,
+        side=side,
+        applies_to=spec.applies_to,
         error=ErrorDetail(
             message=str(exc).splitlines()[0],
             full_traceback=str(exc),
         ),
+    )
+
+
+def _skip_result(spec: QuerySpec, target: str, side: str, reason: str) -> QueryResult:
+    return QueryResult(
+        id=spec.id,
+        title=spec.title,
+        scope=spec.scope,
+        target=target,
+        sql=spec.sql or "",
+        status="skipped",
+        skip_reason=reason,
+        requires_superuser=spec.requires_superuser,
+        side=side,
+        applies_to=spec.applies_to,
     )
 
 
@@ -71,7 +91,47 @@ def collect(
     exclude: list[str],
     dry_run: bool,
     service: Optional[str] = None,
+    target_host: Optional[str] = None,
+    target_port: Optional[int] = None,
+    target_user: Optional[str] = None,
+    target_service: Optional[str] = None,
+    target_maintenance_db: Optional[str] = None,
+    target_dbnames: Optional[list[str]] = None,
+    migration_method: Optional[str] = None,
 ) -> Path:
+    # Une cible n'existe que si elle a été explicitement demandée (aucun flag
+    # --target-* ne doit en créer une par héritage silencieux).
+    target_defined = target_host is not None
+
+    if target_defined and (host, port) == (target_host, target_port):
+        raise ConfigError(
+            f"Erreur : source et cible désignent la même instance ({host}:{port})."
+        )
+
+    no_service_either_side = not service and not target_service
+    same_host_user = target_defined and host == target_host and user == target_user
+    if (
+        target_defined
+        and no_service_either_side
+        and os.environ.get("PGPASSWORD")
+        and not same_host_user
+    ):
+        raise ConfigError(
+            "Erreur : PGPASSWORD ne peut pas servir deux connexions distinctes. "
+            "Utilisez ~/.pgpass (recommandé) ou --service / --target-service."
+        )
+
+    # Dérivée de la topologie, jamais déclarée : pg_upgrade exige un accès local
+    # aux deux clusters, donc n'est physiquement possible que sur le même hôte.
+    same_server_hint: Optional[bool] = (host == target_host) if target_defined else None
+
+    if migration_method == "pg_upgrade" and same_server_hint is False:
+        raise ConfigError(
+            "Erreur : pg_upgrade nécessite que source et cible soient sur le même serveur. "
+            f"Source : {host} (hôte). Cible : {target_host} (hôte). "
+            "Utilisez dump_restore, ou vérifiez la configuration."
+        )
+
     config, all_specs = load_manifest(manifest_path, queries_dir)
     manifest_name: str = config["meta"].get("name", manifest_path.stem)
     read_only: bool = config["read_only"]
@@ -82,43 +142,158 @@ def collect(
     started_at = datetime.now(tz=timezone.utc)
     results: list[QueryResult] = []
     server_version: Optional[str] = None
+    server_version_num: Optional[int] = None
+    target_server_version: Optional[str] = None
+    target_server_version_num: Optional[int] = None
+    same_server: Optional[bool] = same_server_hint
+    target_error: Optional[str] = None
+    target_databases_targeted = target_dbnames if target_dbnames is not None else dbnames
+
+    instance_specs_source = [
+        s for s in selected if s.scope == "instance" and s.side in ("source", "both")
+    ]
+    instance_specs_target = [
+        s for s in selected if s.scope == "instance" and s.side in ("target", "both")
+    ]
+    db_specs = [s for s in selected if s.scope == "database"]
 
     if dry_run:
         for spec in selected:
-            targets = ["instance"] if spec.scope == "instance" else (dbnames or ["(aucune base)"])
-            for target in targets:
-                results.append(QueryResult(
-                    id=spec.id, title=spec.title, scope=spec.scope, target=target,
-                    sql=spec.sql or "", status="skipped", skip_reason="dry-run",
-                    requires_superuser=spec.requires_superuser,
-                ))
+            source_targets = ["instance"] if spec.scope == "instance" else (dbnames or ["(aucune base)"])
+            if spec.side in ("source", "both"):
+                for t in source_targets:
+                    results.append(_skip_result(spec, t, "source", "dry-run"))
+            if spec.side in ("target", "both"):
+                target_targets = ["instance"] if spec.scope == "instance" else (
+                    (target_dbnames if target_dbnames is not None else dbnames) or ["(aucune base)"]
+                )
+                for t in target_targets:
+                    reason = "dry-run" if target_defined else "aucune cible définie"
+                    results.append(_skip_result(spec, t, "target", reason))
     else:
-        password = resolve_password(host, port, user, maintenance_db, service)
+        password = resolve_password(
+            host, port, user, maintenance_db, service,
+            label="source" if target_defined else None,
+        )
+        target_password = None
+        if target_defined:
+            target_password = resolve_password(
+                target_host, target_port, target_user, target_maintenance_db,
+                target_service, label="cible",
+            )
 
-        instance_specs = [s for s in selected if s.scope == "instance"]
-        if instance_specs:
+        source_info: tuple[str, int] = (host, port)
+        need_source_conn = bool(instance_specs_source) or target_defined
+        if need_source_conn:
             try:
                 with open_connection(host, port, user, maintenance_db, service, password) as conn:
-                    if server_version is None:
-                        server_version = get_server_version(conn)
-                    for spec in instance_specs:
-                        results.append(run_query(conn, spec, "instance", read_only))
+                    server_version = get_server_version(conn)
+                    server_version_num = get_server_version_num(conn)
+                    source_info = (conn.info.host, conn.info.port)
+                    for spec in instance_specs_source:
+                        results.append(run_query(
+                            conn, spec, "instance", read_only, side="source",
+                            server_version_num=server_version_num,
+                        ))
             except psycopg.OperationalError as exc:
-                for spec in instance_specs:
-                    results.append(_conn_error_result(spec, "instance", exc))
+                for spec in instance_specs_source:
+                    results.append(_conn_error_result(spec, "instance", exc, side="source"))
 
-        db_specs = [s for s in selected if s.scope == "database"]
-        if db_specs:
-            for dbname in dbnames:
+        target_db_set: Optional[set[str]] = None
+        target_conn_exc: Optional[Exception] = None
+
+        if target_defined:
+            try:
+                with open_connection(
+                    target_host, target_port, target_user, target_maintenance_db,
+                    target_service, target_password,
+                ) as tconn:
+                    target_server_version = get_server_version(tconn)
+                    target_server_version_num = get_server_version_num(tconn)
+                    target_info = (tconn.info.host, tconn.info.port)
+                    same_server = source_info[0] == target_info[0]
+
+                    if source_info == target_info:
+                        raise ConfigError(
+                            "Erreur : source et cible désignent la même instance "
+                            f"({source_info[0]}:{source_info[1]})."
+                        )
+                    if migration_method == "pg_upgrade" and same_server is False:
+                        raise ConfigError(
+                            "Erreur : pg_upgrade nécessite que source et cible soient sur le "
+                            f"même serveur. Source : {source_info[0]} (hôte). "
+                            f"Cible : {target_info[0]} (hôte). "
+                            "Utilisez dump_restore, ou vérifiez la configuration."
+                        )
+
+                    target_db_set = {
+                        row[0] for row in tconn.execute("SELECT datname FROM pg_database").fetchall()
+                    }
+                    for spec in instance_specs_target:
+                        results.append(run_query(
+                            tconn, spec, "instance", read_only, side="target",
+                            server_version_num=target_server_version_num,
+                        ))
+            except psycopg.OperationalError as exc:
+                target_error = str(exc).splitlines()[0]
+                target_conn_exc = exc
+                same_server = same_server_hint
+                for spec in instance_specs_target:
+                    results.append(_conn_error_result(spec, "instance", exc, side="target"))
+        else:
+            for spec in instance_specs_target:
+                results.append(_skip_result(spec, "instance", "target", "aucune cible définie"))
+
+        for dbname in dbnames:
+            src_specs = [s for s in db_specs if s.side in ("source", "both")]
+            if src_specs:
                 try:
                     with open_connection(host, port, user, dbname, service, password) as conn:
                         if server_version is None:
                             server_version = get_server_version(conn)
-                        for spec in db_specs:
-                            results.append(run_query(conn, spec, dbname, read_only))
+                        if server_version_num is None:
+                            server_version_num = get_server_version_num(conn)
+                        for spec in src_specs:
+                            results.append(run_query(
+                                conn, spec, dbname, read_only, side="source",
+                                server_version_num=server_version_num,
+                            ))
                 except psycopg.OperationalError as exc:
-                    for spec in db_specs:
-                        results.append(_conn_error_result(spec, dbname, exc))
+                    for spec in src_specs:
+                        results.append(_conn_error_result(spec, dbname, exc, side="source"))
+
+        tgt_specs = [s for s in db_specs if s.side in ("target", "both")]
+        if tgt_specs:
+            for dbname in (target_databases_targeted or dbnames):
+                if not target_defined:
+                    for spec in tgt_specs:
+                        results.append(_skip_result(spec, dbname, "target", "aucune cible définie"))
+                elif target_conn_exc is not None:
+                    for spec in tgt_specs:
+                        results.append(_conn_error_result(spec, dbname, target_conn_exc, side="target"))
+                elif dbname not in (target_db_set or set()):
+                    for spec in tgt_specs:
+                        results.append(_skip_result(
+                            spec, dbname, "target", f"base {dbname} absente de la cible"
+                        ))
+                else:
+                    try:
+                        with open_connection(
+                            target_host, target_port, target_user, dbname,
+                            target_service, target_password,
+                        ) as tconn:
+                            if target_server_version is None:
+                                target_server_version = get_server_version(tconn)
+                            if target_server_version_num is None:
+                                target_server_version_num = get_server_version_num(tconn)
+                            for spec in tgt_specs:
+                                results.append(run_query(
+                                    tconn, spec, dbname, read_only, side="target",
+                                    server_version_num=target_server_version_num,
+                                ))
+                    except psycopg.OperationalError as exc:
+                        for spec in tgt_specs:
+                            results.append(_conn_error_result(spec, dbname, exc, side="target"))
 
     # Requêtes non sélectionnées → skipped (désactivées ou filtrées)
     for spec in all_specs:
@@ -130,6 +305,7 @@ def collect(
                 status="skipped",
                 requires_superuser=spec.requires_superuser,
                 skip_reason=spec.skip_reason_if_disabled or "désactivée ou filtrée",
+                applies_to=spec.applies_to,
             ))
 
     finished_at = datetime.now(tz=timezone.utc)
@@ -144,13 +320,21 @@ def collect(
         manifest_name=manifest_name,
         started_at=started_at.isoformat(),
         finished_at=finished_at.isoformat(),
-        connection=ConnectionInfo(
+        source=ConnectionInfo(
             host=host, port=port, user=user,
             server_version=server_version,
             databases_targeted=dbnames,
         ),
+        target=ConnectionInfo(
+            host=target_host, port=target_port, user=target_user,
+            server_version=target_server_version,
+            databases_targeted=target_databases_targeted,
+        ) if target_defined else None,
         selection=SelectionInfo(tags=tags, only=only, exclude=exclude, dry_run=dry_run),
         summary=summary,
+        same_server=same_server,
+        target_error=target_error,
+        migration_method=migration_method,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)

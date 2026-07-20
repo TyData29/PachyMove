@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import OrderedDict
 from pathlib import Path
+from typing import Optional
 
 _BADGES: dict[str, str] = {"success": "✅", "skipped": "⏭️", "error": "❌"}
 _VALID_SEVERITIES = {"bloquant", "vigilance", "info"}
@@ -37,23 +38,57 @@ def _synthese_engagee(results: list[dict]) -> bool:
     return False
 
 
-def extraire_synthese(results: list[dict]) -> list[dict]:
+def _topology_excludes(
+    applies_to: list[str],
+    same_server: Optional[bool],
+    migration_method: Optional[str],
+) -> Optional[str]:
+    """Une requête liée à une méthode de migration précise est-elle sans objet
+    ici, compte tenu de la topologie source/cible ?
+
+    `same_server` est dérivé (jamais déclaré) : `False` exclut catégoriquement
+    pg_upgrade (contrainte physique, vraie pour n'importe quelle mission).
+    `True`/`None` (même serveur, ou pas de cible) restent ambigus — seul un
+    override explicite (`migration_method`) permet alors de trancher.
+    """
+    if not applies_to:
+        return None
+    if same_server is False and "pg_upgrade" in applies_to:
+        return "sans objet pour dump/restore — la topologie exclut pg_upgrade"
+    if same_server is not False and migration_method and migration_method not in applies_to:
+        return f"sans objet pour {migration_method} — applicable seulement à : {', '.join(applies_to)}"
+    return None
+
+
+def extraire_synthese(
+    results: list[dict],
+    same_server: Optional[bool] = None,
+    migration_method: Optional[str] = None,
+) -> list[dict]:
     """Retourne les constats de gravité, tous résultats confondus.
 
     Deux sources :
       - convention de colonnes : le résultat expose 'severite' et 'constat'
       - expect_rows : le manifeste déclare un nombre de lignes attendu
     La convention de colonnes prime si les deux sont présentes.
+
+    Une requête exclue par la topologie (`_topology_excludes`) n'alimente pas
+    la synthèse, mais reste visible — annotée — dans le détail par requête.
     """
     entries: list[dict] = []
 
     for r in results:
         if r.get("status") != "success":
             continue
+        if _topology_excludes(r.get("applies_to") or [], same_server, migration_method):
+            continue
 
         columns = r.get("columns") or []
         rows = r.get("rows") or []
-        base = "—" if r.get("scope") == "instance" else r.get("target", "—")
+        if r.get("scope") == "instance":
+            base = "cible" if r.get("side") == "target" else "—"
+        else:
+            base = r.get("target", "—")
         ancre = r["id"].replace("_", "-")
 
         if "severite" in columns and "constat" in columns:
@@ -122,9 +157,12 @@ def _sql_block(sql: str) -> str:
     return f"<details>\n<summary>SQL exécuté</summary>\n\n```sql\n{sql}\n```\n\n</details>\n"
 
 
-def _render_result_body(r: dict, max_rows: int) -> list[str]:
+def _render_result_body(r: dict, max_rows: int, annotation: Optional[str] = None) -> list[str]:
     lines: list[str] = []
     status = r["status"]
+
+    if annotation:
+        lines.append(f"_{annotation}._\n")
 
     if status == "success":
         columns = r.get("columns") or []
@@ -167,7 +205,11 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
     meta = data["metadata"]
     all_results: list[dict] = data["results"]
     summary = meta["summary"]
-    conn = meta["connection"]
+    conn = meta.get("source") or meta["connection"]  # repli JSON pré-spec-3
+    target_meta = meta.get("target")
+    same_server = meta.get("same_server")
+    migration_method = meta.get("migration_method")
+    target_error = meta.get("target_error")
 
     # Groupement par id, ordre de première apparition
     by_id: OrderedDict[str, list[dict]] = OrderedDict()
@@ -181,26 +223,48 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
     targets = ", ".join(conn.get("databases_targeted") or []) or "—"
     version = conn.get("server_version") or "inconnu"
 
-    lines += [
-        "# Rapport de pré-audit PostgreSQL\n",
-        f"**Manifeste :** {meta['manifest_name']}  ",
-        f"**Date :** {started}  ",
-        f"**Serveur :** {version}  ",
-        f"**Bases ciblées :** {targets}  ",
-        (
-            f"**Résumé :** {summary['total']} requêtes — "
-            f"✅ {summary['success']} succès / "
-            f"⏭️ {summary['skipped']} ignorées / "
-            f"❌ {summary['error']} erreurs"
-        ),
-        "\n---\n",
-    ]
+    if target_meta is None:
+        lines += [
+            "# Rapport de pré-audit PostgreSQL\n",
+            f"**Manifeste :** {meta['manifest_name']}  ",
+            f"**Date :** {started}  ",
+            f"**Serveur :** {version}  ",
+            f"**Bases ciblées :** {targets}  ",
+        ]
+    else:
+        target_version = target_meta.get("server_version") or "inconnu"
+        lines += [
+            "# Rapport de pré-audit PostgreSQL\n",
+            f"**Manifeste :** {meta['manifest_name']}  ",
+            f"**Date :** {started}  ",
+            f"**Source :** {conn.get('host')}:{conn.get('port')} ({version})  ",
+            f"**Cible :** {target_meta.get('host')}:{target_meta.get('port')} ({target_version})  ",
+            f"**Bases ciblées :** {targets}  ",
+        ]
+
+    lines.append(
+        f"**Résumé :** {summary['total']} requêtes — "
+        f"✅ {summary['success']} succès / "
+        f"⏭️ {summary['skipped']} ignorées / "
+        f"❌ {summary['error']} erreurs"
+    )
+    lines.append("\n---\n")
+
+    if target_error:
+        n_target_errors = sum(
+            1 for r in all_results if r.get("side") == "target" and r["status"] == "error"
+        )
+        lines.append(
+            f"⚠️ Cible {target_meta.get('host')}:{target_meta.get('port')} injoignable — "
+            f"{n_target_errors} contrôle(s) n'ont pas pu s'exécuter. "
+            "La comparaison source/cible est absente de ce rapport.\n"
+        )
 
     # ── Synthèse ─────────────────────────────────────────────────────────────
     errors = [r for r in all_results if r["status"] == "error"]
 
     if _synthese_engagee(all_results):
-        entries = extraire_synthese(all_results)
+        entries = extraire_synthese(all_results, same_server=same_server, migration_method=migration_method)
         bloquants = [e for e in entries if e["severite"] == "bloquant"]
         vigilances = [e for e in entries if e["severite"] == "vigilance"]
 
@@ -231,6 +295,17 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
     lines += ["", "---\n"]
 
     # ── Sections par requête ─────────────────────────────────────────────────
+    def _render_group(rows: list[dict], scope: str) -> list[str]:
+        out: list[str] = []
+        for r in rows:
+            annotation = _topology_excludes(r.get("applies_to") or [], same_server, migration_method)
+            if scope == "database":
+                out.append(f"### {_badge(r['status'])} `{r['target']}`\n")
+            else:
+                out.append(f"{_badge(r['status'])}\n")
+            out += _render_result_body(r, max_rows, annotation)
+        return out
+
     for qid, group in by_id.items():
         first = group[0]
         anchor = qid.replace("_", "-")
@@ -242,14 +317,19 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
             f"**id :** `{qid}` | **scope :** `{first['scope']}`{superuser_note}\n",
         ]
 
-        if first["scope"] == "database":
-            for r in group:
-                lines.append(f"### {_badge(r['status'])} `{r['target']}`\n")
-                lines += _render_result_body(r, max_rows)
+        target_group = [r for r in group if r.get("side") == "target"]
+
+        if not target_group:
+            # Rétrocompat/mono-serveur : rendu inchangé, group ne contient que
+            # des résultats "source" (ou sans champ side du tout, JSON pré-spec-3).
+            lines += _render_group(group, first["scope"])
         else:
-            r = first
-            lines.append(f"{_badge(r['status'])}\n")
-            lines += _render_result_body(r, max_rows)
+            source_group = [r for r in group if r.get("side", "source") == "source"]
+            if source_group:
+                lines.append("**Source**\n")
+                lines += _render_group(source_group, first["scope"])
+            lines.append("**Cible**\n")
+            lines += _render_group(target_group, first["scope"])
 
         lines.append("---\n")
 
