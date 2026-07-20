@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import psycopg
 import pytest
 
-from pgaudit_runner.connection import resolve_password
+from pgaudit_runner.connection import get_server_version_num, resolve_password
 
 
 @pytest.fixture(autouse=True)
@@ -51,3 +51,18 @@ def test_resolve_password_returns_none_on_successful_connection():
 
     assert result is None
     mock_connect.assert_called_once()
+
+
+def test_get_server_version_num_parses_show_result():
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = ("140011",)
+
+    assert get_server_version_num(conn) == 140011
+    conn.execute.assert_called_once_with("SHOW server_version_num")
+
+
+def test_get_server_version_num_defaults_to_zero_without_row():
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = None
+
+    assert get_server_version_num(conn) == 0

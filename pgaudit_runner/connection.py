@@ -67,3 +67,11 @@ def open_connection(
 def get_server_version(conn: psycopg.Connection) -> str:
     row = conn.execute("SELECT version()").fetchone()
     return row[0] if row else "unknown"
+
+
+def get_server_version_num(conn: psycopg.Connection) -> int:
+    """Version numérique (format server_version_num, ex. 150003 pour PG 15.3) —
+    utilisée pour décider si une requête nécessitant une version minimale
+    (`min_server_version`) peut s'exécuter sur ce serveur."""
+    row = conn.execute("SHOW server_version_num").fetchone()
+    return int(row[0]) if row else 0

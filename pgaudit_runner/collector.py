@@ -10,7 +10,7 @@ from typing import Optional
 import psycopg
 
 from .config import ConfigError, load_manifest
-from .connection import get_server_version, open_connection, resolve_password
+from .connection import get_server_version, get_server_version_num, open_connection, resolve_password
 from .models import (
     ConnectionInfo,
     ErrorDetail,
@@ -142,7 +142,9 @@ def collect(
     started_at = datetime.now(tz=timezone.utc)
     results: list[QueryResult] = []
     server_version: Optional[str] = None
+    server_version_num: Optional[int] = None
     target_server_version: Optional[str] = None
+    target_server_version_num: Optional[int] = None
     same_server: Optional[bool] = same_server_hint
     target_error: Optional[str] = None
     target_databases_targeted = target_dbnames if target_dbnames is not None else dbnames
@@ -186,9 +188,13 @@ def collect(
             try:
                 with open_connection(host, port, user, maintenance_db, service, password) as conn:
                     server_version = get_server_version(conn)
+                    server_version_num = get_server_version_num(conn)
                     source_info = (conn.info.host, conn.info.port)
                     for spec in instance_specs_source:
-                        results.append(run_query(conn, spec, "instance", read_only, side="source"))
+                        results.append(run_query(
+                            conn, spec, "instance", read_only, side="source",
+                            server_version_num=server_version_num,
+                        ))
             except psycopg.OperationalError as exc:
                 for spec in instance_specs_source:
                     results.append(_conn_error_result(spec, "instance", exc, side="source"))
@@ -203,6 +209,7 @@ def collect(
                     target_service, target_password,
                 ) as tconn:
                     target_server_version = get_server_version(tconn)
+                    target_server_version_num = get_server_version_num(tconn)
                     target_info = (tconn.info.host, tconn.info.port)
                     same_server = source_info[0] == target_info[0]
 
@@ -223,7 +230,10 @@ def collect(
                         row[0] for row in tconn.execute("SELECT datname FROM pg_database").fetchall()
                     }
                     for spec in instance_specs_target:
-                        results.append(run_query(tconn, spec, "instance", read_only, side="target"))
+                        results.append(run_query(
+                            tconn, spec, "instance", read_only, side="target",
+                            server_version_num=target_server_version_num,
+                        ))
             except psycopg.OperationalError as exc:
                 target_error = str(exc).splitlines()[0]
                 target_conn_exc = exc
@@ -239,8 +249,15 @@ def collect(
             if src_specs:
                 try:
                     with open_connection(host, port, user, dbname, service, password) as conn:
+                        if server_version is None:
+                            server_version = get_server_version(conn)
+                        if server_version_num is None:
+                            server_version_num = get_server_version_num(conn)
                         for spec in src_specs:
-                            results.append(run_query(conn, spec, dbname, read_only, side="source"))
+                            results.append(run_query(
+                                conn, spec, dbname, read_only, side="source",
+                                server_version_num=server_version_num,
+                            ))
                 except psycopg.OperationalError as exc:
                     for spec in src_specs:
                         results.append(_conn_error_result(spec, dbname, exc, side="source"))
@@ -265,8 +282,15 @@ def collect(
                             target_host, target_port, target_user, dbname,
                             target_service, target_password,
                         ) as tconn:
+                            if target_server_version is None:
+                                target_server_version = get_server_version(tconn)
+                            if target_server_version_num is None:
+                                target_server_version_num = get_server_version_num(tconn)
                             for spec in tgt_specs:
-                                results.append(run_query(tconn, spec, dbname, read_only, side="target"))
+                                results.append(run_query(
+                                    tconn, spec, dbname, read_only, side="target",
+                                    server_version_num=target_server_version_num,
+                                ))
                     except psycopg.OperationalError as exc:
                         for spec in tgt_specs:
                             results.append(_conn_error_result(spec, dbname, exc, side="target"))

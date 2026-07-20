@@ -19,6 +19,8 @@ class QuerySpec:
     severity_if_unexpected: str = "vigilance"
     side: str = "source"  # "source" | "target" | "both"
     applies_to: list[str] = field(default_factory=list)  # "pg_upgrade" | "dump_restore" ; vide = les deux
+    min_server_version: Optional[int] = None  # format server_version_num (ex. 150000 = PG 15.0)
+    max_server_version: Optional[int] = None  # format server_version_num (ex. 149999 = PG < 15.0)
     sql: Optional[str] = None  # chargé depuis le fichier .sql
 
 

@@ -130,6 +130,47 @@ def test_run_query_propagates_side_on_error():
     assert result.side == "target"
 
 
+# ── Garde-fou de version (min_server_version / max_server_version) ──────────
+
+
+def test_run_query_skips_when_server_version_below_minimum():
+    spec = _spec("SELECT 1", min_server_version=150000)
+    result = run_query(conn=None, spec=spec, target="instance", server_version_num=140011)
+    assert result.status == "skipped"
+    assert "PostgreSQL ≥ 15" in result.skip_reason
+    assert "14" in result.skip_reason
+
+
+def test_run_query_runs_when_server_version_meets_minimum():
+    spec = _spec("SELECT 1", min_server_version=150000)
+    result = run_query(conn=_mock_conn(), spec=spec, target="instance", server_version_num=170004)
+    assert result.status == "success"
+
+
+def test_run_query_skips_when_server_version_above_maximum():
+    spec = _spec("SELECT 1", max_server_version=149999)
+    result = run_query(conn=None, spec=spec, target="instance", server_version_num=170004)
+    assert result.status == "skipped"
+    assert "PostgreSQL ≤ 14" in result.skip_reason
+
+
+def test_run_query_runs_when_server_version_within_maximum():
+    spec = _spec("SELECT 1", max_server_version=149999)
+    result = run_query(conn=_mock_conn(), spec=spec, target="instance", server_version_num=140011)
+    assert result.status == "success"
+
+
+def test_run_query_ignores_version_gate_when_server_version_num_unknown():
+    spec = _spec("SELECT 1", min_server_version=150000, max_server_version=149999)
+    result = run_query(conn=_mock_conn(), spec=spec, target="instance", server_version_num=None)
+    assert result.status == "success"
+
+
+def test_run_query_ignores_version_gate_when_not_declared():
+    result = run_query(conn=_mock_conn(), spec=_spec("SELECT 1"), target="instance", server_version_num=140011)
+    assert result.status == "success"
+
+
 @pytest.mark.parametrize(
     "value,expected",
     [

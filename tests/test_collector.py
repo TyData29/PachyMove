@@ -19,12 +19,16 @@ def _write(tmp_path: Path, relpath: str, content: str) -> Path:
     return path
 
 
-def _fake_conn(host: str, port: int = 5432, datnames: tuple[str, ...] = ("db1",)) -> MagicMock:
+def _fake_conn(
+    host: str, port: int = 5432, datnames: tuple[str, ...] = ("db1",),
+    version_num: int = 170004,
+) -> MagicMock:
     conn = MagicMock()
     conn.info = SimpleNamespace(host=host, port=port)
     cur = MagicMock()
     cur.description = [SimpleNamespace(name="x")]
     cur.fetchall.return_value = [(name,) for name in datnames]
+    cur.fetchone.return_value = (str(version_num),)
     conn.execute.return_value = cur
     return conn
 
@@ -209,6 +213,49 @@ def test_target_connection_failure_marks_all_target_results_error(tmp_path: Path
 
     source_instance = [r for r in data["results"] if r["id"] == "q_instance" and r["side"] == "source"]
     assert source_instance[0]["status"] == "success"
+
+
+def test_min_server_version_gate_skips_cleanly_on_older_source(tmp_path: Path):
+    # Cas réel trouvé en audit : database_collation_version.sql échoue (colonne
+    # inexistante) sur une source PG14, puisque datcollversion n'existe qu'à
+    # partir de PG15. Doit être ignorée proprement, jamais en erreur.
+    manifest = _simple_manifest(tmp_path, """
+  - id: q
+    title: Q
+    file: instance/q.sql
+    scope: instance
+    min_server_version: 150000
+""")
+
+    with patch("pgaudit_runner.collector.resolve_password", return_value=None), \
+         patch("pgaudit_runner.collector.open_connection") as mock_open:
+        mock_open.side_effect = lambda host, *a, **kw: _cm(_fake_conn(host, version_num=140011))
+        output_file = collect(**_base_kwargs(tmp_path, manifest))
+
+    data = _read_json(output_file)
+    r = [x for x in data["results"] if x["id"] == "q"][0]
+    assert r["status"] == "skipped"
+    assert "PostgreSQL ≥ 15" in r["skip_reason"]
+
+
+def test_max_server_version_gate_skips_cleanly_on_newer_source(tmp_path: Path):
+    manifest = _simple_manifest(tmp_path, """
+  - id: q
+    title: Q
+    file: instance/q.sql
+    scope: instance
+    max_server_version: 149999
+""")
+
+    with patch("pgaudit_runner.collector.resolve_password", return_value=None), \
+         patch("pgaudit_runner.collector.open_connection") as mock_open:
+        mock_open.side_effect = lambda host, *a, **kw: _cm(_fake_conn(host, version_num=170004))
+        output_file = collect(**_base_kwargs(tmp_path, manifest))
+
+    data = _read_json(output_file)
+    r = [x for x in data["results"] if x["id"] == "q"][0]
+    assert r["status"] == "skipped"
+    assert "PostgreSQL ≤ 14" in r["skip_reason"]
 
 
 def test_database_absent_from_target_is_skipped_cleanly(tmp_path: Path):

@@ -72,6 +72,15 @@ queries:
     scope: instance
     enabled: true
     tags: [bloquant, collation]
+    min_server_version: 150000  # datcollversion / pg_database_collation_actual_version() introduits en PG15
+
+  - id: database_collation_locale
+    title: "Locale de collation par défaut des bases (inventaire, PG < 15)"
+    file: instance/database_collation_locale.sql
+    scope: instance
+    enabled: true
+    tags: [inventaire, collation]
+    max_server_version: 149999  # équivalent dégradé de database_collation_version sur une source antérieure à PG15
 
   - id: data_checksums
     title: "Sommes de contrôle désactivées"
