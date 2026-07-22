@@ -9,6 +9,8 @@ dist/
 build/
 .env
 .pytest_cache/
+*.duckdb
+*.duckdb.wal
 
 # Claude
 CLAUDE.md
