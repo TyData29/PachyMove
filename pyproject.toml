@@ -12,6 +12,7 @@ dependencies = [
     "PyYAML>=6.0",
     "click>=8.1",
     "Markdown>=3.4",
+    "duckdb>=1.0",
 ]
 
 [project.optional-dependencies]
