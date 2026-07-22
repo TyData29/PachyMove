@@ -213,3 +213,23 @@ Si au moins une requête déclare `expect_rows`, ou expose des colonnes `severit
 
 - L'outil est conçu pour l'audit et la génération de rapports, pas pour exécuter des migrations. Il ne modifie jamais la base.
 - Par exemple, il n'est pas possible de comparer la matrice de droits à une cible YAML et générer les `GRANT`/`REVOKE` correctifs — c'est volontairement hors scope de l'audit des droits car nature différente (comparaison + génération de code, pas lecture seule + rapport). Cela pourra éventuellement devenir un outil séparé une fois une matrice réelle validée.
+
+---
+
+## `qgisaudit-runner` — inventaire des projets QGIS (module séparé)
+
+Outil **autonome**, distinct de `pgaudit-runner` : ne se connecte à aucune base, lit uniquement des fichiers `.qgs`/`.qgz` sur disque (partages réseau). Sa propre commande CLI (`qgisaudit-runner`), sa propre configuration YAML. Spec complète : `.tydata/specs/spec_script_inventaire_qgis.md`.
+
+```powershell
+cp qgisaudit_runner/config.example.yml config_qgis.yml
+# éditer config_qgis.yml : racines à parcourir, dossier de sortie
+
+qgisaudit-runner --config config_qgis.yml
+```
+
+Parcourt récursivement les racines déclarées, identifie les couches PostgreSQL de chaque projet (`<provider>postgres</provider>`), et classe chaque projet selon son mode de connexion (`nommee` = tout en `service=` centralisé, `embarquee` = tout en connexion directe/`authcfg=`, `mixte`, `sans_pg`). Produit deux CSV dans le dossier de sortie :
+
+- `projets.csv` — une ligne par projet (comptage de couches, profil, drapeaux `mdp_en_clair`/`authcfg_utilise`, services/hôtes/bases distincts).
+- `couches_pg.csv` — une ligne par couche PostgreSQL (mode de connexion, paramètres, schéma/table/colonne géométrique/SRID).
+
+Pensé pour être croisé avec `role_membership_tree` de `rights_audit.json` (jointure sur le nom de rôle QGIS `user=`). Lecture seule, ne plante jamais sur un fichier corrompu (erreurs logguées sur stderr, traitement des autres fichiers poursuivi).
