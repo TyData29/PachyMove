@@ -231,20 +231,35 @@ def run_derived_query(
     version_skip = _version_gate_reason(spec, server_version_num)
     if version_skip:
         return QueryResult(
-            id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
-            sql=spec.sql, status="skipped", skip_reason=version_skip,
+            id=spec.id,
+            title=spec.title,
+            scope=spec.scope,
+            description=spec.description,
+            target=target,
+            sql=spec.sql,
+            status="skipped",
+            skip_reason=version_skip,
             requires_superuser=spec.requires_superuser,
-            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
-            side=side, applies_to=spec.applies_to,
+            expect_rows=spec.expect_rows,
+            severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
         )
 
     if read_only and _WRITE_RE.search(_strip_sql_noise(spec.sql)):
         return QueryResult(
-            id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
-            sql=spec.sql, status="error",
+            id=spec.id,
+            title=spec.title,
+            scope=spec.scope,
+            description=spec.description,
+            target=target,
+            sql=spec.sql,
+            status="error",
             requires_superuser=spec.requires_superuser,
-            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
-            side=side, applies_to=spec.applies_to,
+            expect_rows=spec.expect_rows,
+            severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
             error=ErrorDetail(
                 message="Requête rejetée : mot-clé d'écriture détecté (mode read_only actif)",
                 full_traceback="",
@@ -253,11 +268,18 @@ def run_derived_query(
 
     if read_only and _WRITE_RE.search(_strip_sql_noise(spec.iterate_over_sql)):
         return QueryResult(
-            id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
-            sql=spec.sql, status="error",
+            id=spec.id,
+            title=spec.title,
+            scope=spec.scope,
+            description=spec.description,
+            target=target,
+            sql=spec.sql,
+            status="error",
             requires_superuser=spec.requires_superuser,
-            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
-            side=side, applies_to=spec.applies_to,
+            expect_rows=spec.expect_rows,
+            severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
             error=ErrorDetail(
                 message="Requête de découverte rejetée : mot-clé d'écriture détecté (mode read_only actif)",
                 full_traceback="",
@@ -282,12 +304,20 @@ def run_derived_query(
     except psycopg.Error as e:
         duration_ms = int((datetime.now(tz=timezone.utc) - started_at).total_seconds() * 1000)
         return QueryResult(
-            id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
-            sql=spec.sql, status="error",
-            started_at=started_at.isoformat(), duration_ms=duration_ms,
+            id=spec.id,
+            title=spec.title,
+            scope=spec.scope,
+            description=spec.description,
+            target=target,
+            sql=spec.sql,
+            status="error",
+            started_at=started_at.isoformat(),
+            duration_ms=duration_ms,
             requires_superuser=spec.requires_superuser,
-            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
-            side=side, applies_to=spec.applies_to,
+            expect_rows=spec.expect_rows,
+            severity_if_unexpected=spec.severity_if_unexpected,
+            side=side,
+            applies_to=spec.applies_to,
             error=ErrorDetail(
                 sqlstate=getattr(e, "sqlstate", None),
                 message=f"Découverte échouée : {str(e).splitlines()[0]}",
@@ -330,11 +360,21 @@ def run_derived_query(
 
     duration_ms = int((datetime.now(tz=timezone.utc) - started_at).total_seconds() * 1000)
     return QueryResult(
-        id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
-        sql=spec.sql, status="success",
-        started_at=started_at.isoformat(), duration_ms=duration_ms,
+        id=spec.id,
+        title=spec.title,
+        scope=spec.scope,
+        description=spec.description,
+        target=target,
+        sql=spec.sql,
+        status="success",
+        started_at=started_at.isoformat(),
+        duration_ms=duration_ms,
         requires_superuser=spec.requires_superuser,
-        columns=columns_order, rows=rows, row_count=len(rows),
-        expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
-        side=side, applies_to=spec.applies_to,
+        columns=columns_order,
+        rows=rows,
+        row_count=len(rows),
+        expect_rows=spec.expect_rows,
+        severity_if_unexpected=spec.severity_if_unexpected,
+        side=side,
+        applies_to=spec.applies_to,
     )
