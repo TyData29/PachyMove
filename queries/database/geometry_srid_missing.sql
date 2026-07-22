@@ -1,5 +1,5 @@
 -- Colonnes géométrie sans SRID déclaré (srid = 0) : source classique de bugs de
--- reprojection silencieux, ou de comparaisons spatiales dont le référentiel
+-- reprojection silencieuse, ou de comparaisons spatiales dont le référentiel
 -- n'est en réalité pas garanti identique.
 SELECT f_table_schema    AS schema_,
        f_table_name      AS relation,
