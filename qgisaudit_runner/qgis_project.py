@@ -12,8 +12,8 @@ _FILE_PROVIDERS = {"ogr", "gdal"}
 
 
 class ProjectParseError(Exception):
-    """Fichier illisible/corrompu — à logguer et ignorer, jamais à laisser
-    remonter (spec §7 : ne jamais planter sur un fichier)."""
+    """Fichier illisible/corrompu — à capturer par l'appelant (log + continuer)
+    afin de respecter la spec §7 : ne jamais arrêter le scan sur un fichier."""
 
 
 @dataclass
