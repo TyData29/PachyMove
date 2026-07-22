@@ -57,7 +57,7 @@ def parse_datasource(raw: str) -> Datasource:
 
 def determine_mode_connexion(ds: Datasource) -> str:
     """Spec §5.5 : service= présent -> "service" ; sinon authcfg= -> "authcfg" ;
-    sinon (host=/dbname=) -> "embarquee"."""
+    sinon -> "embarquee"."""
     if ds.get("service"):
         return "service"
     if ds.get("authcfg"):
