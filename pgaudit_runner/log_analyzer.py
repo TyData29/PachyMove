@@ -62,63 +62,63 @@ def analyze_directory(
     last_seen: Optional[str] = None
     unparsed_sample: list[dict] = []
 
-for file in files:
+    for file in files:
         pending_host_by_pid.clear()
         with file.open("r", encoding="utf-8", errors="replace") as fh:
             for line_number, raw_line in enumerate(fh, start=1):
                 line = raw_line.rstrip("\n")
-            if not line.strip():
-                continue
-            lines_total += 1
+                if not line.strip():
+                    continue
+                lines_total += 1
 
-            m = _LINE_RE.match(line)
-            if not m:
-                lines_prefix_unrecognized += 1
-                if len(unparsed_sample) < unparsed_sample_size:
-                    unparsed_sample.append(
-                        {"file": file.name, "line_number": line_number, "text": line[:300]}
-                    )
-                continue
+                m = _LINE_RE.match(line)
+                if not m:
+                    lines_prefix_unrecognized += 1
+                    if len(unparsed_sample) < unparsed_sample_size:
+                        unparsed_sample.append(
+                            {"file": file.name, "line_number": line_number, "text": line[:300]}
+                        )
+                    continue
 
-            ts = m.group("ts")
-            pid = m.group("pid")
-            message = m.group("message")
+                ts = m.group("ts")
+                pid = m.group("pid")
+                message = m.group("message")
 
-            received = _RECEIVED_RE.match(message)
-            if received:
-                pending_host_by_pid[pid] = received.group("host")
-                lines_matched += 1
-                continue
+                received = _RECEIVED_RE.match(message)
+                if received:
+                    pending_host_by_pid[pid] = received.group("host")
+                    lines_matched += 1
+                    continue
 
-            authorized = _AUTHORIZED_RE.match(message)
-            if authorized:
-                lines_matched += 1
-                connections_total += 1
-                user = authorized.group("user")
-                database = authorized.group("database")
-                application = authorized.group("application")
-                host = pending_host_by_pid.pop(pid, None)
+                authorized = _AUTHORIZED_RE.match(message)
+                if authorized:
+                    lines_matched += 1
+                    connections_total += 1
+                    user = authorized.group("user")
+                    database = authorized.group("database")
+                    application = authorized.group("application")
+                    host = pending_host_by_pid.pop(pid, None)
 
-                if first_seen is None or ts < first_seen:
-                    first_seen = ts
-                if last_seen is None or ts > last_seen:
-                    last_seen = ts
+                    if first_seen is None or ts < first_seen:
+                        first_seen = ts
+                    if last_seen is None or ts > last_seen:
+                        last_seen = ts
 
-                stats = roles.setdefault(user, RoleStats())
-                stats.connection_count += 1
-                _bump(stats.databases, database)
-                _bump(stats.source_hosts, host)
-                _bump(stats.applications, application)
-                if stats.first_seen is None or ts < stats.first_seen:
-                    stats.first_seen = ts
-                if stats.last_seen is None or ts > stats.last_seen:
-                    stats.last_seen = ts
-                continue
+                    stats = roles.setdefault(user, RoleStats())
+                    stats.connection_count += 1
+                    _bump(stats.databases, database)
+                    _bump(stats.source_hosts, host)
+                    _bump(stats.applications, application)
+                    if stats.first_seen is None or ts < stats.first_seen:
+                        stats.first_seen = ts
+                    if stats.last_seen is None or ts > stats.last_seen:
+                        stats.last_seen = ts
+                    continue
 
-            # Ligne au bon format (préfixe reconnu) mais message non reconnu
-            # (checkpoint, autovacuum, etc. — tout événement hors connexion) :
-            # ignorée sans compter comme "non parsée", c'est le cas normal et
-            # majoritaire d'un vrai fichier de log, pas une anomalie.
+                # Ligne au bon format (préfixe reconnu) mais message non reconnu
+                # (checkpoint, autovacuum, etc. — tout événement hors connexion) :
+                # ignorée sans compter comme "non parsée", c'est le cas normal et
+                # majoritaire d'un vrai fichier de log, pas une anomalie.
 
     return {
         "metadata": {
