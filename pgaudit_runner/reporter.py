@@ -400,13 +400,16 @@ def render_html(markdown_text: str, title: str = "Rapport de pré-audit PostgreS
     cette extension, Python-Markdown laisse ce contenu tel quel (texte brut, pas
     de coloration/mise en forme de bloc de code).
     """
+    import html as _html
+
     body = _markdown_lib.markdown(
         markdown_text,
         extensions=["tables", "fenced_code", "md_in_html"],
     )
+    safe_title = _html.escape(title, quote=True)
     return (
         "<!DOCTYPE html>\n"
         '<html lang="fr">\n<head>\n<meta charset="utf-8">\n'
-        f"<title>{title}</title>\n<style>{_HTML_CSS}</style>\n</head>\n<body>\n"
+        f"<title>{safe_title}</title>\n<style>{_HTML_CSS}</style>\n</head>\n<body>\n"
         f"{body}\n</body>\n</html>\n"
     )
