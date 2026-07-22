@@ -29,7 +29,7 @@ queries:
     file: database/geometry_no_spatial_index.sql
     scope: database
     enabled: true
-    tags: [postgis, qualite]
+    tags: [postgis]
 
   - id: geometry_no_validity_constraint
     title: "Colonnes géométrie sans contrainte de validité (indicateur indirect)"
