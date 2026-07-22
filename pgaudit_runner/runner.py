@@ -264,7 +264,14 @@ def run_derived_query(
 
     try:
         if spec.statement_timeout_ms:
-            conn.execute(f"SET statement_timeout = {spec.statement_timeout_ms}")
+            try:
+                timeout_ms = int(spec.statement_timeout_ms)
+            except (TypeError, ValueError):
+                timeout_ms = None
+            if timeout_ms:
+                conn.execute(
+                    pgsql.SQL("SET statement_timeout = {}").format(pgsql.Literal(timeout_ms))
+                )
         disc_cur = conn.execute(spec.iterate_over_sql)
         disc_columns = [d.name for d in disc_cur.description] if disc_cur.description else []
         discovery_rows = [dict(zip(disc_columns, row)) for row in disc_cur.fetchall()]
