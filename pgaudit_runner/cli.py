@@ -57,6 +57,7 @@ def cli():
 )
 @click.option(
     "--max-rows", default=100, show_default=True,
+    type=click.IntRange(min=1),
     help="Seuil de troncature des résultats (rapport auto, si --with-report)",
 )
 def collect_cmd(
