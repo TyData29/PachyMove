@@ -247,6 +247,19 @@ def run_derived_query(
             ),
         )
 
+    if read_only and _WRITE_RE.search(_strip_sql_noise(spec.iterate_over_sql)):
+        return QueryResult(
+            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            sql=spec.sql, status="error",
+            requires_superuser=spec.requires_superuser,
+            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
+            side=side, applies_to=spec.applies_to,
+            error=ErrorDetail(
+                message="Requête de découverte rejetée : mot-clé d'écriture détecté (mode read_only actif)",
+                full_traceback="",
+            ),
+        )
+
     started_at = datetime.now(tz=timezone.utc)
 
     try:
