@@ -83,3 +83,17 @@ queries:
     scope: database
     enabled: true
     tags: [qualite, info]
+
+  - id: duplicate_tables_across_schemas
+    title: "Tables en doublon entre schémas (même nom et/ou même structure — catalogue seul)"
+    file: database/duplicate_tables_across_schemas.sql
+    scope: database
+    enabled: true
+    tags: [qualite]
+
+  - id: most_accessed_tables
+    title: "Classement des tables les plus accédées (top 20)"
+    file: database/most_accessed_tables.sql
+    scope: database
+    enabled: true
+    tags: [qualite, info]

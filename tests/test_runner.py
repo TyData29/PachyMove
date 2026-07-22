@@ -8,7 +8,15 @@ import psycopg
 import pytest
 
 from pgaudit_runner.models import QuerySpec
-from pgaudit_runner.runner import _WRITE_RE, _coerce, _strip_sql_noise, run_query
+from pgaudit_runner.runner import (
+    _WRITE_RE,
+    _coerce,
+    _compose_derived_sql,
+    _sample_clause,
+    _strip_sql_noise,
+    run_derived_query,
+    run_query,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -184,6 +192,131 @@ def test_run_query_ignores_version_gate_when_not_declared():
 )
 def test_coerce_passthrough_and_binary(value, expected):
     assert _coerce(value) == expected
+
+
+def _cur(columns: list[str], rows: list[tuple]) -> MagicMock:
+    cur = MagicMock()
+    cur.description = [SimpleNamespace(name=c) for c in columns]
+    cur.fetchall.return_value = rows
+    return cur
+
+
+def _derived_spec(template_sql: str, discovery_sql: str, **overrides) -> QuerySpec:
+    defaults = dict(
+        id="q", title="Q", file="q.sql", scope="database",
+        sql=template_sql, iterate_over="discover.sql", iterate_over_sql=discovery_sql,
+    )
+    defaults.update(overrides)
+    return QuerySpec(**defaults)
+
+
+# ── run_derived_query (requêtes "dérivées", specs_data_quality_on_tables.md) ─
+
+
+def test_run_derived_query_executes_template_per_discovered_row():
+    discovery_cur = _cur(
+        ["schema_", "relation", "colonne"],
+        [("public", "t1", "c1"), ("public", "t2", "c2")],
+    )
+    metric_cur_1 = _cur(["pct_remplissage"], [(5.0,)])
+    metric_cur_2 = _cur(["pct_remplissage"], [(3.0,)])
+    conn = MagicMock()
+    conn.execute.side_effect = [discovery_cur, metric_cur_1, metric_cur_2]
+
+    spec = _derived_spec("SELECT ... FROM {schema}.{table} {sample}", "SELECT ...")
+    result = run_derived_query(conn, spec, target="db1", read_only=True)
+
+    assert result.status == "success"
+    assert result.row_count == 2
+    assert result.rows[0] == {"schema_": "public", "relation": "t1", "colonne": "c1", "pct_remplissage": 5.0}
+    assert result.rows[1] == {"schema_": "public", "relation": "t2", "colonne": "c2", "pct_remplissage": 3.0}
+    assert result.columns == ["schema_", "relation", "colonne", "pct_remplissage"]
+
+
+def test_run_derived_query_continues_after_per_row_error():
+    discovery_cur = _cur(["schema_", "relation"], [("public", "t1"), ("public", "t2")])
+    ok_cur = _cur(["nb_lignes"], [(10,)])
+    conn = MagicMock()
+    conn.execute.side_effect = [discovery_cur, psycopg.Error("permission denied"), ok_cur]
+
+    spec = _derived_spec("SELECT count(*) AS nb_lignes FROM {schema}.{table}", "SELECT ...")
+    result = run_derived_query(conn, spec, target="db1", read_only=True)
+
+    assert result.status == "success"
+    assert result.row_count == 2
+    assert result.rows[0]["erreur"] == "permission denied"
+    assert result.rows[1] == {"schema_": "public", "relation": "t2", "nb_lignes": 10}
+
+
+def test_run_derived_query_discovery_failure_returns_error():
+    conn = MagicMock()
+    conn.execute.side_effect = psycopg.Error("relation geometry_columns does not exist")
+
+    spec = _derived_spec("SELECT 1 FROM {schema}.{table}", "SELECT * FROM geometry_columns")
+    result = run_derived_query(conn, spec, target="db1", read_only=True)
+
+    assert result.status == "error"
+    assert "Découverte échouée" in result.error.message
+
+
+def test_run_derived_query_rejects_write_keyword_in_template():
+    spec = _derived_spec("DROP TABLE {schema}.{table}", "SELECT 1")
+    result = run_derived_query(conn=None, spec=spec, target="db1", read_only=True)
+    assert result.status == "error"
+    assert "read_only" in result.error.message
+
+
+def test_run_derived_query_skips_on_version_gate():
+    spec = _derived_spec("SELECT 1 FROM {schema}.{table}", "SELECT 1", min_server_version=150000)
+    result = run_derived_query(conn=None, spec=spec, target="db1", server_version_num=140011)
+    assert result.status == "skipped"
+
+
+def test_run_derived_query_empty_discovery_yields_empty_success():
+    discovery_cur = _cur(["schema_", "relation"], [])
+    conn = MagicMock()
+    conn.execute.side_effect = [discovery_cur]
+
+    spec = _derived_spec("SELECT 1 FROM {schema}.{table}", "SELECT ...")
+    result = run_derived_query(conn, spec, target="db1", read_only=True)
+
+    assert result.status == "success"
+    assert result.rows == []
+    assert result.row_count == 0
+
+
+# ── Composition sécurisée (identifiants, échantillonnage) ────────────────────
+
+
+def test_sample_clause_empty_when_no_target():
+    assert _sample_clause(None, 1_000_000).as_string(None) == ""
+
+
+def test_sample_clause_empty_when_under_threshold():
+    assert _sample_clause(15000, 500).as_string(None) == ""
+
+
+def test_sample_clause_applies_when_over_threshold():
+    clause = _sample_clause(15000, 1_500_000).as_string(None)
+    assert clause == "TABLESAMPLE SYSTEM (1.0)"
+
+
+def test_compose_derived_sql_quotes_identifiers_safely():
+    # Noms d'objets exotiques (espace, guillemet double) : doivent être
+    # échappés par psycopg, jamais interpolés en texte brut (pas d'injection).
+    template = "SELECT {column} FROM {schema}.{table} {sample}"
+    drow = {"schema_": "public", "relation": 'Weird"Table', "colonne": "my col"}
+    composed = _compose_derived_sql(template, drow, None).as_string(None)
+    assert '"Weird""Table"' in composed
+    assert '"my col"' in composed
+    assert '"public"' in composed
+
+
+def test_compose_derived_sql_omits_column_placeholder_when_absent():
+    template = "SELECT count(*) FROM {schema}.{table} {sample}"
+    drow = {"schema_": "public", "relation": "t1"}
+    composed = _compose_derived_sql(template, drow, None).as_string(None)
+    assert '"public"."t1"' in composed
 
 
 def test_no_write_keywords_leak_into_real_query_files():

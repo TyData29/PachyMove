@@ -74,6 +74,25 @@ def load_manifest(
 
         sql = sql_path.read_text(encoding="utf-8").strip()
 
+        iterate_over = q.get("iterate_over")
+        iterate_over_sql: Any = None
+        if iterate_over is not None:
+            discovery_path = queries_dir / iterate_over
+            if not discovery_path.exists():
+                raise ConfigError(
+                    f"'{qid}' : requête de découverte introuvable (iterate_over) : {discovery_path}"
+                )
+            iterate_over_sql = discovery_path.read_text(encoding="utf-8").strip()
+
+        sample_target_rows = q.get("sample_target_rows")
+        if sample_target_rows is not None and (
+            not isinstance(sample_target_rows, int) or sample_target_rows <= 0
+        ):
+            raise ConfigError(
+                f"'{qid}' : sample_target_rows invalide '{sample_target_rows}' "
+                "(attendu : entier positif, ou absent)"
+            )
+
         specs.append(
             QuerySpec(
                 id=qid,
@@ -92,6 +111,9 @@ def load_manifest(
                 min_server_version=min_server_version,
                 max_server_version=max_server_version,
                 sql=sql,
+                iterate_over=iterate_over,
+                iterate_over_sql=iterate_over_sql,
+                sample_target_rows=sample_target_rows,
             )
         )
 
