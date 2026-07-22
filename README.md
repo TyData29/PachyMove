@@ -15,6 +15,16 @@ Boîte à outils pour préparer une migration PostgreSQL majeure (ex. PG14 → P
 
 Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`.
 
+### Analyse des logs de connexion (hors manifeste)
+
+`pgaudit-runner analyze-logs` — synthèse des connexions par rôle depuis des logs PostgreSQL (`log_connections`), pas une base vivante : pas de manifeste, pas de connexion réseau.
+
+```powershell
+pgaudit-runner analyze-logs --input-dir chemin/vers/logs --output output/connexions.json
+```
+
+**Limite assumée** : avec `log_connections` seul, la sortie donne qui/quand/depuis où/quelle base — ni la durée de session (nécessite `log_disconnections`), ni le détail des actions/tables (nécessite `log_statement` ou `pgaudit`). Sortie JSON indexée par rôle, croisable avec `role_membership_tree` de `rights_audit.json` (jointure sur le nom de rôle). Toute ligne au format non reconnu est comptée et échantillonnée (`unparsed_sample`) plutôt que silencieusement ignorée — signal si le `log_line_prefix` réel diverge du défaut PostgreSQL supposé (`%m [%p] `).
+
 ---
 
 ## Installation

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -163,3 +164,25 @@ def test_html_command_converts_markdown_file(tmp_path: Path):
     html = html_file.read_text(encoding="utf-8")
     assert html.startswith("<!DOCTYPE html>")
     assert "<table>" in html
+
+
+def test_analyze_logs_command_writes_json_summary(tmp_path: Path):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "postgresql.log").write_text(
+        "2026-07-23 08:00:00.100 UTC [1001] LOG:  connection received: host=10.0.0.5 port=1\n"
+        "2026-07-23 08:00:00.150 UTC [1001] LOG:  connection authorized: user=alice database=mydb\n",
+        encoding="utf-8",
+    )
+    output_file = tmp_path / "out" / "connexions.json"
+    runner = CliRunner()
+
+    result = runner.invoke(cli, [
+        "analyze-logs", "--input-dir", str(log_dir), "--output", str(output_file),
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert output_file.exists()
+    data = json.loads(output_file.read_text(encoding="utf-8"))
+    assert data["metadata"]["connections_total"] == 1
+    assert data["roles"]["alice"]["databases"] == {"mydb": 1}

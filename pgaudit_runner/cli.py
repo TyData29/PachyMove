@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import click
 
 from .collector import collect
+from .log_analyzer import analyze_directory
 from .reporter import generate_report, render_html
 
 
@@ -184,5 +187,48 @@ def html_cmd(input_file: Path, output_file: Path) -> None:
         html = render_html(md)
         output_file.write_text(html, encoding="utf-8")
         click.echo(f"HTML généré : {output_file}")
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@cli.command(name="analyze-logs")
+@click.option(
+    "--input-dir", "input_dir", required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Dossier contenant les fichiers de log PostgreSQL (log_connections)",
+)
+@click.option(
+    "--pattern", default="*", show_default=True,
+    help="Filtre de nom de fichier dans --input-dir (non récursif)",
+)
+@click.option(
+    "--output", "output_file", default=None, type=click.Path(path_type=Path),
+    help="Fichier JSON en sortie (défaut : output/connexions_<horodatage>.json)",
+)
+def analyze_logs_cmd(input_dir: Path, pattern: str, output_file: Optional[Path]) -> None:
+    """Synthétise les connexions par rôle depuis des logs PostgreSQL (log_connections).
+
+    Ne couvre ni la durée de session (nécessite log_disconnections) ni le détail
+    des actions/tables (nécessite log_statement ou pgaudit) — ces réglages ne
+    sont pas activés à la source. Sortie indexée par rôle, croisable avec
+    role_membership_tree de rights_audit.json.
+    """
+    try:
+        result = analyze_directory(input_dir, pattern=pattern)
+
+        if output_file is None:
+            ts = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+            output_file = Path("output") / f"connexions_{ts}.json"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+
+        meta = result["metadata"]
+        click.echo(f"Synthèse générée : {output_file}")
+        click.echo(
+            f"{meta['connections_total']} connexion(s) sur {len(meta['files_processed'])} "
+            f"fichier(s), {meta['lines_unparsed']} ligne(s) non reconnue(s)."
+        )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
