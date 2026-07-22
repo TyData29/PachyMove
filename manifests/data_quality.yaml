@@ -36,7 +36,7 @@ queries:
     file: database/geometry_no_validity_constraint.sql
     scope: database
     enabled: true
-    tags: [postgis, qualite]
+    tags: [postgis]
 
   - id: tables_without_pk
     title: "Tables sans clé primaire"
