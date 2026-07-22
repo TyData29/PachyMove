@@ -1,0 +1,85 @@
+meta:
+  name: "Contrôle qualité des données"
+  version: "1.0"
+
+defaults:
+  statement_timeout_ms: 30000
+  read_only: true
+
+queries:
+
+  # ── Healthcheck PostGIS (indicateurs indirects) ──────────────────────────
+
+  - id: geometry_srid_missing
+    title: "Colonnes géométrie sans SRID déclaré"
+    file: database/geometry_srid_missing.sql
+    scope: database
+    enabled: true
+    tags: [postgis]
+
+  - id: geometry_generic_type
+    title: "Colonnes géométrie en type générique"
+    file: database/geometry_generic_type.sql
+    scope: database
+    enabled: true
+    tags: [postgis]
+
+  - id: geometry_no_spatial_index
+    title: "Colonnes géométrie sans index spatial"
+    file: database/geometry_no_spatial_index.sql
+    scope: database
+    enabled: true
+    tags: [postgis]
+
+  - id: geometry_no_validity_constraint
+    title: "Colonnes géométrie sans contrainte de validité (indicateur indirect)"
+    file: database/geometry_no_validity_constraint.sql
+    scope: database
+    enabled: true
+    tags: [postgis]
+
+  - id: tables_without_pk
+    title: "Tables sans clé primaire"
+    file: database/tables_without_pk.sql
+    scope: database
+    enabled: true
+    tags: [qualite]
+
+  - id: vacuum_analyze_lag
+    title: "VACUUM/ANALYZE en retard (bloat estimé)"
+    file: database/vacuum_analyze_lag.sql
+    scope: database
+    enabled: true
+    tags: [qualite, maintenance]
+
+  # ── Convention de nommage ─────────────────────────────────────────────────
+
+  - id: naming_convention_snake_case
+    title: "Objets/colonnes non conformes à snake_case"
+    file: database/naming_convention_snake_case.sql
+    scope: database
+    enabled: true
+    tags: [nommage, qualite]
+
+  # ── Autres contrôles catalogue ─────────────────────────────────────────────
+
+  - id: sequences_near_limit
+    title: "Séquences proches de leur valeur maximale"
+    file: database/sequences_near_limit.sql
+    scope: database
+    enabled: true
+    tags: [qualite]
+
+  - id: fk_like_columns_without_constraint
+    title: "Colonnes *_id sans contrainte FK déclarée (heuristique)"
+    file: database/fk_like_columns_without_constraint.sql
+    scope: database
+    enabled: true
+    tags: [qualite]
+
+  - id: tables_without_comment
+    title: "Tables sans commentaire (pg_description)"
+    file: database/tables_without_comment.sql
+    scope: database
+    enabled: true
+    tags: [qualite, info]

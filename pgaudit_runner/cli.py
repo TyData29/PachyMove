@@ -19,9 +19,9 @@ def cli():
 
 
 @cli.command(name="collect")
-@click.option("--host", required=True, help="Hôte PostgreSQL")
+@click.option("--host", default=None, help="Hôte PostgreSQL (obligatoire hors --dry-run)")
 @click.option("--port", default=5432, show_default=True, type=int)
-@click.option("--user", required=True, help="Utilisateur PostgreSQL")
+@click.option("--user", default=None, help="Utilisateur PostgreSQL (obligatoire hors --dry-run)")
 @click.option("--dbnames", default="", help="Bases ciblées (séparées par virgule)")
 @click.option(
     "--maintenance-db", default="postgres", show_default=True,
@@ -32,7 +32,7 @@ def cli():
     help="Chemin du manifeste YAML",
 )
 @click.option(
-    "--output", required=True, type=click.Path(path_type=Path),
+    "--output", default=Path("output"), show_default=True, type=click.Path(path_type=Path),
     help="Dossier de sortie du JSON",
 )
 @click.option("--tags", default="", help="Filtrer par tags (virgule-séparés)")
@@ -52,9 +52,9 @@ def cli():
 )
 @click.option("--dry-run", is_flag=True, help="Simule sans connexion réelle")
 def collect_cmd(
-    host: str,
+    host: Optional[str],
     port: int,
-    user: str,
+    user: Optional[str],
     dbnames: str,
     maintenance_db: str,
     manifest: Path,
@@ -73,6 +73,14 @@ def collect_cmd(
     dry_run: bool,
 ) -> None:
     """Exécute les requêtes d'audit et produit un JSON horodaté."""
+    if not dry_run and (not host or not user):
+        raise click.UsageError(
+            "--host et --user sont obligatoires hors --dry-run "
+            "(ou ajoutez --dry-run pour valider le manifeste sans connexion réelle)."
+        )
+    host = host or "(dry-run)"
+    user = user or "(dry-run)"
+
     queries_dir = manifest.parent.parent / "queries"
     if not queries_dir.exists():
         raise click.ClickException(f"Dossier queries introuvable : {queries_dir}")

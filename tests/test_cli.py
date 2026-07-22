@@ -76,6 +76,33 @@ def test_collect_target_port_inherits_host_and_user(tmp_path: Path):
     assert kwargs["target_user"] == "u"
 
 
+def test_collect_dry_run_without_host_user_passes(tmp_path: Path):
+    manifest = _manifest(tmp_path)
+    runner = CliRunner()
+
+    with patch("pgaudit_runner.cli.collect", return_value=tmp_path / "out.json"):
+        result = runner.invoke(cli, [
+            "collect",
+            "--manifest", str(manifest), "--output", str(tmp_path / "out"),
+            "--dry-run",
+        ])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_collect_without_dry_run_and_without_host_user_raises_usage_error(tmp_path: Path):
+    manifest = _manifest(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, [
+        "collect",
+        "--manifest", str(manifest), "--output", str(tmp_path / "out"),
+    ])
+
+    assert result.exit_code != 0
+    assert "--host et --user sont obligatoires" in result.output
+
+
 def test_migration_method_rejects_invalid_choice(tmp_path: Path):
     manifest = _manifest(tmp_path)
     runner = CliRunner()
