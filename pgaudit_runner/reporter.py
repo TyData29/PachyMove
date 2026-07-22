@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import html as _html
 import json
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
+
+import markdown as _markdown_lib
 
 _BADGES: dict[str, str] = {"success": "✅", "skipped": "⏭️", "error": "❌"}
 _VALID_SEVERITIES = {"bloquant", "vigilance", "info"}
@@ -144,10 +147,16 @@ def _synthese_table(entries: list[dict], severite: str) -> list[str]:
 def _md_table(columns: list[str], rows: list[dict]) -> str:
     if not rows:
         return "_Aucun résultat._\n"
-    header = "| " + " | ".join(columns) + " |"
+    escaped_cols = [_html.escape(str(c), quote=False) for c in columns]
+    header = "| " + " | ".join(escaped_cols) + " |"
     sep = "|" + "|".join(" --- " for _ in columns) + "|"
     body_lines = [
-        "| " + " | ".join(str(row.get(c, "")).replace("|", "\\|") for c in columns) + " |"
+        "| "
+        + " | ".join(
+            _html.escape(str(row.get(c, "")), quote=False).replace("|", "\\|")
+            for c in columns
+        )
+        + " |"
         for row in rows
     ]
     return "\n".join([header, sep, *body_lines]) + "\n"
@@ -356,3 +365,56 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
             lines.append("")
 
     return "\n".join(lines) + "\n"
+
+
+_HTML_CSS = """
+:root { color-scheme: light; }
+body {
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    color: #1a1a1a;
+    max-width: 60rem;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+}
+h1, h2, h3 { line-height: 1.25; }
+h1 { border-bottom: 2px solid #ddd; padding-bottom: .3rem; }
+h2 { border-bottom: 1px solid #eee; padding-bottom: .2rem; margin-top: 2.5rem; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .9rem; }
+th, td { border: 1px solid #ddd; padding: .4rem .6rem; text-align: left; vertical-align: top; }
+th { background: #f5f5f5; }
+tr:nth-child(even) td { background: #fafafa; }
+code { background: #f2f2f2; padding: .1rem .3rem; border-radius: 3px; font-size: .9em; }
+pre { background: #f2f2f2; padding: .8rem 1rem; overflow-x: auto; border-radius: 4px; }
+pre code { background: none; padding: 0; }
+details { margin: .5rem 0; }
+summary { cursor: pointer; color: #555; }
+blockquote { border-left: 3px solid #ccc; margin: 1rem 0; padding: .2rem 1rem; color: #444; }
+hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+@media print {
+    body { max-width: none; margin: 0; }
+    table { page-break-inside: avoid; }
+    details { page-break-inside: avoid; }
+}
+"""
+
+
+def render_html(markdown_text: str, title: str = "Rapport de pré-audit PostgreSQL") -> str:
+    """Convertit un rapport Markdown en HTML autonome (CSS intégrée, aucun asset externe).
+
+    `md_in_html` est nécessaire : le rapport imbrique des blocs ```sql fenced à
+    l'intérieur de `<details>` (HTML brut) pour le repli du SQL exécuté — sans
+    cette extension, Python-Markdown laisse ce contenu tel quel (texte brut, pas
+    de coloration/mise en forme de bloc de code).
+    """
+    body = _markdown_lib.markdown(
+        markdown_text,
+        extensions=["tables", "fenced_code", "md_in_html"],
+    )
+    safe_title = _html.escape(title, quote=True)
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="fr">\n<head>\n<meta charset="utf-8">\n'
+        f"<title>{safe_title}</title>\n<style>{_HTML_CSS}</style>\n</head>\n<body>\n"
+        f"{body}\n</body>\n</html>\n"
+    )

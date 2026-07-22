@@ -31,7 +31,7 @@ pip install -e .
 # ou, pour lancer les tests : pip install -e .[dev]
 ```
 
-**Dépendances :** Python ≥ 3.10 · psycopg v3 · PyYAML · click
+**Dépendances :** Python ≥ 3.10 · psycopg v3 · PyYAML · click · Markdown
 
 > **Dépannage** — erreur `File "setup.py" not found` (ou toute erreur pendant `pip install -e .`) : le projet n'a pas de `setup.py`, il utilise le format moderne `pyproject.toml` seul. Une version de `pip` trop ancienne ne sait pas l'installer en mode éditable. La commande `python -m pip install --upgrade pip` ci-dessus corrige ce cas — à relancer si l'installation a été tentée avant.
 
@@ -51,15 +51,29 @@ pgaudit-runner collect `
   --output output/
 ```
 
-Produit : `output/audit_<YYYYMMDD>_<HHMMSS>.json`
+Produit : `output/audit_<YYYYMMDD>_<HHMMSS>.json` **et** `output/rapport_<YYYYMMDD>_<HHMMSS>.md` (le rapport Markdown est généré automatiquement après la collecte — `--no-with-report` pour ne produire que le JSON).
 
-### 2. Générer le rapport (sans connexion)
+### 2. Régénérer le rapport (sans connexion, depuis un JSON existant)
+
+Utile pour reproduire un rapport après coup (autre troncature `--max-rows`, JSON archivé d'un run précédent) :
 
 ```powershell
 pgaudit-runner report `
   --input output/audit_20260612_143022.json `
   --output output/rapport_20260612.md
 ```
+
+### 3. Convertir le rapport en HTML (optionnel)
+
+Le rapport Markdown peut être relu, commenté et édité à la main avant conversion — la commande `html` prend un fichier `.md` en entrée, pas le JSON :
+
+```powershell
+pgaudit-runner html `
+  --input output/rapport_20260612.md `
+  --output output/rapport_20260612.html
+```
+
+Produit un fichier HTML autonome (CSS intégrée, aucune dépendance externe, aucun binaire à installer). Pour un PDF, ouvrir le fichier dans un navigateur et imprimer (Ctrl+P → Enregistrer en PDF).
 
 ### Options utiles de `collect`
 
@@ -73,6 +87,8 @@ pgaudit-runner report `
 | `--maintenance-db postgres` | Base de connexion pour les requêtes `scope: instance` (défaut : `postgres`) |
 | `--service nom` | Utilise un profil `pg_service.conf` |
 | `--dry-run` | Simule sans connexion réelle (vérifie ce qui serait lancé) — `--host`/`--user`/`--output` deviennent optionnels (`output/` par défaut) |
+| `--no-with-report` | Ne produit que le JSON, sans générer le rapport Markdown automatiquement |
+| `--max-rows 200` | Seuil de troncature du rapport auto-généré (défaut : 100) |
 
 ### Mot de passe
 
