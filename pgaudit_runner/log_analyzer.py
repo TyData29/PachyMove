@@ -62,10 +62,11 @@ def analyze_directory(
     last_seen: Optional[str] = None
     unparsed_sample: list[dict] = []
 
-    for file in files:
-        text = file.read_text(encoding="utf-8", errors="replace")
-        for line_number, raw_line in enumerate(text.splitlines(), start=1):
-            line = raw_line.rstrip("\n")
+for file in files:
+        pending_host_by_pid.clear()
+        with file.open("r", encoding="utf-8", errors="replace") as fh:
+            for line_number, raw_line in enumerate(fh, start=1):
+                line = raw_line.rstrip("\n")
             if not line.strip():
                 continue
             lines_total += 1
