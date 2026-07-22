@@ -28,3 +28,8 @@ include = ["pgaudit_runner*", "qgisaudit_runner*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `scripts/` n'est pas un package installé (comme export_csv.py, volontairement
+# un script autonome) : sans ceci, `pytest` (contrairement à `python -m pytest`,
+# qui ajoute le répertoire courant à sys.path) ne trouve pas `scripts.*` — c'est
+# ce qui a fait échouer la CI alors que les tests passaient en local.
+pythonpath = ["."]
