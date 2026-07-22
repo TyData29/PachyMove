@@ -15,7 +15,6 @@ FROM pg_stat_user_tables
 WHERE n_live_tup + n_dead_tup > 0
   AND (
         100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0) > 20
-        OR GREATEST(last_vacuum, last_autovacuum) < now() - interval '30 days'
-        OR (last_vacuum IS NULL AND last_autovacuum IS NULL)
+        OR COALESCE(GREATEST(last_vacuum, last_autovacuum), to_timestamp(0)) < now() - interval '30 days'
       )
 ORDER BY pct_lignes_mortes DESC NULLS LAST
