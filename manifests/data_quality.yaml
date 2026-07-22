@@ -22,7 +22,7 @@ queries:
     file: database/geometry_generic_type.sql
     scope: database
     enabled: true
-    tags: [postgis, qualite]
+    tags: [postgis]
 
   - id: geometry_no_spatial_index
     title: "Colonnes géométrie sans index spatial"
