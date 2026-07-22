@@ -6,7 +6,7 @@ from typing import Optional
 import click
 
 from .collector import collect
-from .reporter import generate_report
+from .reporter import generate_report, render_html
 
 
 def _csv(value: str) -> list[str]:
@@ -51,6 +51,14 @@ def cli():
     help="Force l'interprétation de la méthode de migration en cas d'ambiguïté (même serveur)",
 )
 @click.option("--dry-run", is_flag=True, help="Simule sans connexion réelle")
+@click.option(
+    "--with-report/--no-with-report", default=True, show_default=True,
+    help="Génère aussi le rapport Markdown juste après la collecte",
+)
+@click.option(
+    "--max-rows", default=100, show_default=True,
+    help="Seuil de troncature des résultats (rapport auto, si --with-report)",
+)
 def collect_cmd(
     host: Optional[str],
     port: int,
@@ -71,6 +79,8 @@ def collect_cmd(
     target_dbnames: Optional[str],
     migration_method: Optional[str],
     dry_run: bool,
+    with_report: bool,
+    max_rows: int,
 ) -> None:
     """Exécute les requêtes d'audit et produit un JSON horodaté."""
     if not dry_run and (not host or not user):
@@ -118,6 +128,14 @@ def collect_cmd(
             migration_method=migration_method,
         )
         click.echo(f"Audit sauvegardé : {output_file}")
+
+        if with_report:
+            report_path = output_file.with_name(
+                output_file.name.replace("audit_", "rapport_", 1)
+            ).with_suffix(".md")
+            md = generate_report(output_file, max_rows=max_rows)
+            report_path.write_text(md, encoding="utf-8")
+            click.echo(f"Rapport généré : {report_path}")
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -143,5 +161,27 @@ def report_cmd(input_file: Path, output_file: Path, max_rows: int) -> None:
         md = generate_report(input_file, max_rows=max_rows)
         output_file.write_text(md, encoding="utf-8")
         click.echo(f"Rapport généré : {output_file}")
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@cli.command(name="html")
+@click.option(
+    "--input", "input_file", required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Fichier Markdown en entrée (rapport, éventuellement édité à la main)",
+)
+@click.option(
+    "--output", "output_file", required=True,
+    type=click.Path(path_type=Path),
+    help="Fichier HTML en sortie",
+)
+def html_cmd(input_file: Path, output_file: Path) -> None:
+    """Convertit un rapport Markdown en HTML autonome (CSS intégrée, sans dépendance externe)."""
+    try:
+        md = input_file.read_text(encoding="utf-8")
+        html = render_html(md)
+        output_file.write_text(html, encoding="utf-8")
+        click.echo(f"HTML généré : {output_file}")
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc

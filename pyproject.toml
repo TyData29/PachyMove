@@ -11,6 +11,7 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "PyYAML>=6.0",
     "click>=8.1",
+    "Markdown>=3.4",
 ]
 
 [project.optional-dependencies]

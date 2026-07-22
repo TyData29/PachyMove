@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pgaudit_runner.reporter import extraire_synthese, generate_report
+from pgaudit_runner.reporter import extraire_synthese, generate_report, render_html
 
 
 def _audit_json(tmp_path: Path, results: list[dict], **meta_overrides) -> Path:
@@ -334,3 +334,31 @@ def test_report_old_json_without_target_fields_renders_identically(tmp_path: Pat
     assert "**Source :**" not in report
     assert "**Cible :**" not in report
     assert "injoignable" not in report
+
+
+def test_render_html_converts_tables_and_fenced_sql_inside_details(tmp_path: Path):
+    audit = _audit_json(tmp_path, [
+        _result(id="q1", scope="database", target="db1",
+                sql="SELECT 1", columns=["n"], rows=[{"n": 1}], row_count=1),
+    ])
+    report = generate_report(audit)
+
+    html = render_html(report)
+
+    assert html.startswith("<!DOCTYPE html>")
+    assert "<table>" in html
+    # Le SQL est imbriqué dans <details> : sans md_in_html, resterait en texte brut.
+    assert "<pre><code" in html
+    assert "```" not in html
+    # Les ancres explicites du sommaire (<a id="...">) doivent survivre intactes.
+    assert '<a id="q1">' in html
+
+
+def test_render_html_is_self_contained(tmp_path: Path):
+    audit = _audit_json(tmp_path, [_result(columns=["n"], rows=[{"n": 1}], row_count=1)])
+    report = generate_report(audit)
+
+    html = render_html(report)
+
+    assert "<style>" in html
+    assert "http://" not in html and "https://" not in html
