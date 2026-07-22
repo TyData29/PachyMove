@@ -158,6 +158,7 @@ def _conn_error_result(
         id=spec.id,
         title=spec.title,
         scope=spec.scope,
+        description=spec.description,
         target=target,
         sql=spec.sql or "",
         status="error",
@@ -176,6 +177,7 @@ def _skip_result(spec: QuerySpec, target: str, side: str, reason: str) -> QueryR
         id=spec.id,
         title=spec.title,
         scope=spec.scope,
+        description=spec.description,
         target=target,
         sql=spec.sql or "",
         status="skipped",
@@ -408,7 +410,7 @@ def collect(
     for spec in all_specs:
         if spec.id not in selected_ids:
             results.append(QueryResult(
-                id=spec.id, title=spec.title, scope=spec.scope,
+                id=spec.id, title=spec.title, scope=spec.scope, description=spec.description,
                 target="instance" if spec.scope == "instance" else "(toutes bases)",
                 sql=spec.sql or "",
                 status="skipped",

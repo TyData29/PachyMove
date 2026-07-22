@@ -229,3 +229,53 @@ def test_real_manifests_load_without_error(manifest_path: Path):
     assert specs
     for spec in specs:
         assert spec.sql
+
+
+@pytest.mark.parametrize("manifest_path", REAL_MANIFESTS, ids=lambda p: p.name)
+def test_real_manifests_every_query_has_a_description(manifest_path: Path):
+    """Garde-fou de contenu : toute nouvelle requête doit documenter son rôle
+    dans le manifeste (demande explicite, à ne pas oublier en ajoutant un item)."""
+    _config, specs = load_manifest(manifest_path, REAL_QUERIES_DIR)
+    missing = [s.id for s in specs if not (s.description or "").strip()]
+    assert not missing, f"description manquante pour : {missing}"
+
+
+def test_load_manifest_reads_and_strips_description(tmp_path: Path):
+    _write(tmp_path, "queries/instance/ping.sql", "SELECT 1")
+    manifest = _write(
+        tmp_path,
+        "manifests/m.yaml",
+        """
+queries:
+  - id: ping
+    title: "Ping"
+    description: >
+      Ligne un.
+      Ligne deux.
+    file: instance/ping.sql
+    scope: instance
+""",
+    )
+
+    _config, specs = load_manifest(manifest, tmp_path / "queries")
+
+    assert specs[0].description == "Ligne un. Ligne deux."
+
+
+def test_load_manifest_description_defaults_to_none_when_absent(tmp_path: Path):
+    _write(tmp_path, "queries/instance/ping.sql", "SELECT 1")
+    manifest = _write(
+        tmp_path,
+        "manifests/m.yaml",
+        """
+queries:
+  - id: ping
+    title: "Ping"
+    file: instance/ping.sql
+    scope: instance
+""",
+    )
+
+    _config, specs = load_manifest(manifest, tmp_path / "queries")
+
+    assert specs[0].description is None

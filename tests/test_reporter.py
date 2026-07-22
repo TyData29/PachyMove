@@ -362,3 +362,30 @@ def test_render_html_is_self_contained(tmp_path: Path):
 
     assert "<style>" in html
     assert "http://" not in html and "https://" not in html
+
+
+def test_report_renders_description_as_blockquote(tmp_path: Path):
+    audit = _audit_json(tmp_path, [_result(description="Ce que fait ce contrôle et pourquoi.")])
+
+    report = generate_report(audit)
+
+    assert "> Ce que fait ce contrôle et pourquoi." in report
+
+
+def test_report_omits_description_block_when_absent(tmp_path: Path):
+    # Rétrocompatibilité : un JSON pré-chantier description (champ absent, pas
+    # juste None) ne doit rien afficher de spécial ni planter.
+    audit = _audit_json(tmp_path, [_result()])
+
+    report = generate_report(audit)
+
+    assert "\n> " not in report
+
+
+def test_report_renders_multiline_description_with_quote_prefix_on_each_line(tmp_path: Path):
+    audit = _audit_json(tmp_path, [_result(description="Ligne un.\nLigne deux.")])
+
+    report = generate_report(audit)
+
+    assert "> Ligne un." in report
+    assert "> Ligne deux." in report

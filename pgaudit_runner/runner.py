@@ -82,6 +82,7 @@ def run_query(
             id=spec.id,
             title=spec.title,
             scope=spec.scope,
+            description=spec.description,
             target=target,
             sql=spec.sql,
             status="skipped",
@@ -98,6 +99,7 @@ def run_query(
             id=spec.id,
             title=spec.title,
             scope=spec.scope,
+            description=spec.description,
             target=target,
             sql=spec.sql,
             status="error",
@@ -130,6 +132,7 @@ def run_query(
             id=spec.id,
             title=spec.title,
             scope=spec.scope,
+            description=spec.description,
             target=target,
             sql=spec.sql,
             status="success",
@@ -153,6 +156,7 @@ def run_query(
             id=spec.id,
             title=spec.title,
             scope=spec.scope,
+            description=spec.description,
             target=target,
             sql=spec.sql,
             status="error",
@@ -227,7 +231,7 @@ def run_derived_query(
     version_skip = _version_gate_reason(spec, server_version_num)
     if version_skip:
         return QueryResult(
-            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
             sql=spec.sql, status="skipped", skip_reason=version_skip,
             requires_superuser=spec.requires_superuser,
             expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
@@ -236,7 +240,7 @@ def run_derived_query(
 
     if read_only and _WRITE_RE.search(_strip_sql_noise(spec.sql)):
         return QueryResult(
-            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
             sql=spec.sql, status="error",
             requires_superuser=spec.requires_superuser,
             expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
@@ -249,7 +253,7 @@ def run_derived_query(
 
     if read_only and _WRITE_RE.search(_strip_sql_noise(spec.iterate_over_sql)):
         return QueryResult(
-            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
             sql=spec.sql, status="error",
             requires_superuser=spec.requires_superuser,
             expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
@@ -278,7 +282,7 @@ def run_derived_query(
     except psycopg.Error as e:
         duration_ms = int((datetime.now(tz=timezone.utc) - started_at).total_seconds() * 1000)
         return QueryResult(
-            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
             sql=spec.sql, status="error",
             started_at=started_at.isoformat(), duration_ms=duration_ms,
             requires_superuser=spec.requires_superuser,
@@ -326,7 +330,7 @@ def run_derived_query(
 
     duration_ms = int((datetime.now(tz=timezone.utc) - started_at).total_seconds() * 1000)
     return QueryResult(
-        id=spec.id, title=spec.title, scope=spec.scope, target=target,
+        id=spec.id, title=spec.title, scope=spec.scope, description=spec.description, target=target,
         sql=spec.sql, status="success",
         started_at=started_at.isoformat(), duration_ms=duration_ms,
         requires_superuser=spec.requires_superuser,

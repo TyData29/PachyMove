@@ -182,6 +182,11 @@ defaults:
 queries:
   - id: mon_check               # identifiant unique
     title: "Mon contrôle"
+    description: >              # optionnel, 2-4 lignes : à quoi sert ce contrôle
+      Explique le rôle de cette requête dans le contexte du manifeste (ex. ce
+      qu'elle bloque pour une migration PG14 → PG18, ou ce qu'elle révèle pour
+      un audit qualité). Affiché dans le JSON (results[].description) et en
+      citation dans le rapport Markdown/HTML.
     file: database/mon_check.sql
     scope: database             # "instance" ou "database"
     enabled: true

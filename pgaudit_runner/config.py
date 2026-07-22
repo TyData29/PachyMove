@@ -99,6 +99,7 @@ def load_manifest(
                 title=q["title"],
                 file=q["file"],
                 scope=q["scope"],
+                description=(q.get("description") or "").strip() or None,
                 enabled=q.get("enabled", True),
                 tags=q.get("tags", []),
                 requires_superuser=q.get("requires_superuser", False),

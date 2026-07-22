@@ -12,6 +12,11 @@ queries:
 
   - id: role_membership_tree
     title: "Arbre d'appartenance aux groupes (récursif)"
+    description: >
+      Résout récursivement l'appartenance de chaque rôle à ses groupes
+      (pg_auth_members). Sert de clé de lecture à toute la matrice de droits :
+      un droit "direct" sur une table peut en réalité venir d'un groupe
+      hérité plusieurs niveaux plus haut.
     file: instance/role_membership_tree.sql
     scope: instance
     enabled: true
@@ -21,6 +26,11 @@ queries:
 
   - id: relation_privileges
     title: "Droits sur tables/vues/matviews/foreign tables/séquences"
+    description: >
+      Cœur de la matrice de droits : qui peut lire, écrire, ou administrer
+      chaque relation, avec la source du droit (direct, groupe, ou
+      propriétaire). Base pour valider qu'aucun accès n'est perdu ou élargi
+      par erreur après une migration ou une refonte des rôles.
     file: database/relation_privileges.sql
     scope: database
     enabled: true
@@ -28,6 +38,11 @@ queries:
 
   - id: schema_privileges
     title: "Droits sur les schémas (USAGE et création d'objets)"
+    description: >
+      Droit USAGE (visibilité du schéma) et droit de création d'objets par
+      schéma. Un rôle sans USAGE ne voit aucun objet du schéma quels que
+      soient ses droits sur les tables elles-mêmes — souvent la cause d'un
+      "je n'ai accès à rien" mal diagnostiqué.
     file: database/schema_privileges.sql
     scope: database
     enabled: true
@@ -35,6 +50,11 @@ queries:
 
   - id: function_privileges
     title: "Droits sur les fonctions/procédures"
+    description: >
+      Droits d'exécution sur les fonctions et procédures stockées. Complète
+      la matrice relation_privileges : une fonction SECURITY DEFINER mal
+      protégée peut contourner les droits normalement appliqués aux tables
+      qu'elle manipule.
     file: database/function_privileges.sql
     scope: database
     enabled: true
@@ -42,6 +62,11 @@ queries:
 
   - id: rls_policies_presence
     title: "Présence de politiques RLS (signalement, non audité en détail)"
+    description: >
+      Signale les tables où des politiques RLS existent, sans en auditer le
+      détail. Un droit SELECT dans la matrice ne garantit pas un accès à
+      toutes les lignes si des politiques RLS filtrent le résultat — avertit
+      qu'une lecture plus fine est nécessaire sur ces tables précises.
     file: database/rls_policies_presence.sql
     scope: database
     enabled: true

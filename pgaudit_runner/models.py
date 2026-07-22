@@ -10,6 +10,7 @@ class QuerySpec:
     title: str
     file: str
     scope: str  # "instance" | "database"
+    description: Optional[str] = None  # à quoi sert ce contrôle dans le contexte du manifeste
     enabled: bool = True
     tags: list[str] = field(default_factory=list)
     requires_superuser: bool = False
@@ -42,6 +43,7 @@ class QueryResult:
     target: str  # "instance" ou nom de la base
     sql: str
     status: str  # "success" | "skipped" | "error"
+    description: Optional[str] = None
     started_at: Optional[str] = None  # ISO 8601
     duration_ms: Optional[int] = None
     requires_superuser: bool = False

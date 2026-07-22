@@ -319,6 +319,28 @@ def test_compose_derived_sql_omits_column_placeholder_when_absent():
     assert '"public"."t1"' in composed
 
 
+def test_run_query_propagates_description_on_success():
+    spec = _spec("SELECT 1", description="Ce que fait ce contrôle.")
+    result = run_query(conn=_mock_conn(), spec=spec, target="instance", read_only=True)
+    assert result.description == "Ce que fait ce contrôle."
+
+
+def test_run_query_propagates_description_when_none():
+    result = run_query(conn=_mock_conn(), spec=_spec("SELECT 1"), target="instance", read_only=True)
+    assert result.description is None
+
+
+def test_run_derived_query_propagates_description():
+    discovery_cur = _cur(["schema_", "relation"], [])
+    conn = MagicMock()
+    conn.execute.side_effect = [discovery_cur]
+    spec = _derived_spec(
+        "SELECT 1 FROM {schema}.{table}", "SELECT ...", description="Description du scan.",
+    )
+    result = run_derived_query(conn, spec, target="db1", read_only=True)
+    assert result.description == "Description du scan."
+
+
 def test_no_write_keywords_leak_into_real_query_files():
     """Même vérification que le garde-fou réel (littéraux/commentaires retirés avant
     le scan) — un littéral légitime comme 'CREATE' (privilege_type) ne doit pas
