@@ -10,6 +10,7 @@ Boîte à outils pour préparer une migration PostgreSQL majeure (ex. PG14 → P
 |---|---|---|
 | **Pré-audit migration** | `pg14_to_pg18.yaml` | Inventaire (bases, config serveur, rôles, extensions, FDW, colonnes générées, publications…) **+ détection des bloquants de migration** : Famille A (`--tags bloquant`, ex. collations, checksums, index invalides) et Famille B, delta 15→18 (`--tags delta`, ex. `search_path`, droits par défaut sur `public`) |
 | **Audit des droits** | `rights_audit.yaml` | Cartographie des privilèges PostgreSQL — ACL directs, hérités de groupe (résolution récursive), propriété, signalement RLS. Générique, réutilisable hors contexte de migration. |
+| **Contrôle qualité des données** | `data_quality.yaml` | Healthcheck PostGIS (SRID, type générique, index spatial, contrainte de validité — indicateurs indirects), tables sans PK, VACUUM/bloat en retard, convention de nommage `snake_case`, séquences proches de leur limite, colonnes `*_id` sans FK déclarée, tables sans commentaire. Générique, indépendant d'une migration. |
 
 Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`.
 
@@ -18,15 +19,21 @@ Chaque module s'exécute avec la même CLI, en changeant simplement `--manifest`
 ## Installation
 
 ```bash
+git clone https://github.com/TyData29/PachyMove.git
+cd PachyMove
+
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 # source .venv/bin/activate   # Linux/macOS
 
+python -m pip install --upgrade pip
 pip install -e .
 # ou, pour lancer les tests : pip install -e .[dev]
 ```
 
 **Dépendances :** Python ≥ 3.10 · psycopg v3 · PyYAML · click
+
+> **Dépannage** — erreur `File "setup.py" not found` (ou toute erreur pendant `pip install -e .`) : le projet n'a pas de `setup.py`, il utilise le format moderne `pyproject.toml` seul. Une version de `pip` trop ancienne ne sait pas l'installer en mode éditable. La commande `python -m pip install --upgrade pip` ci-dessus corrige ce cas — à relancer si l'installation a été tentée avant.
 
 ---
 
@@ -65,7 +72,7 @@ pgaudit-runner report `
 | `--exclude postgis_version` | Exclut ces ids |
 | `--maintenance-db postgres` | Base de connexion pour les requêtes `scope: instance` (défaut : `postgres`) |
 | `--service nom` | Utilise un profil `pg_service.conf` |
-| `--dry-run` | Simule sans connexion réelle (vérifie ce qui serait lancé) |
+| `--dry-run` | Simule sans connexion réelle (vérifie ce qui serait lancé) — `--host`/`--user`/`--output` deviennent optionnels (`output/` par défaut) |
 
 ### Mot de passe
 
