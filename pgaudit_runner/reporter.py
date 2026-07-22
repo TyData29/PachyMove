@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as _html
 import json
 from collections import OrderedDict
 from pathlib import Path
@@ -146,10 +147,16 @@ def _synthese_table(entries: list[dict], severite: str) -> list[str]:
 def _md_table(columns: list[str], rows: list[dict]) -> str:
     if not rows:
         return "_Aucun résultat._\n"
-    header = "| " + " | ".join(columns) + " |"
+    escaped_cols = [_html.escape(str(c), quote=False) for c in columns]
+    header = "| " + " | ".join(escaped_cols) + " |"
     sep = "|" + "|".join(" --- " for _ in columns) + "|"
     body_lines = [
-        "| " + " | ".join(str(row.get(c, "")).replace("|", "\\|") for c in columns) + " |"
+        "| "
+        + " | ".join(
+            _html.escape(str(row.get(c, "")), quote=False).replace("|", "\\|")
+            for c in columns
+        )
+        + " |"
         for row in rows
     ]
     return "\n".join([header, sep, *body_lines]) + "\n"
@@ -400,8 +407,6 @@ def render_html(markdown_text: str, title: str = "Rapport de pré-audit PostgreS
     cette extension, Python-Markdown laisse ce contenu tel quel (texte brut, pas
     de coloration/mise en forme de bloc de code).
     """
-    import html as _html
-
     body = _markdown_lib.markdown(
         markdown_text,
         extensions=["tables", "fenced_code", "md_in_html"],
