@@ -15,7 +15,7 @@ queries:
     file: database/geometry_srid_missing.sql
     scope: database
     enabled: true
-    tags: [postgis, qualite]
+    tags: [postgis]
 
   - id: geometry_generic_type
     title: "Colonnes géométrie en type générique"
