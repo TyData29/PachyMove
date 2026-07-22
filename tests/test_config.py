@@ -279,3 +279,22 @@ queries:
     _config, specs = load_manifest(manifest, tmp_path / "queries")
 
     assert specs[0].description is None
+
+
+def test_load_manifest_invalid_description_type_raises(tmp_path: Path):
+    _write(tmp_path, "queries/instance/ping.sql", "SELECT 1")
+    manifest = _write(
+        tmp_path,
+        "manifests/m.yaml",
+        """
+queries:
+  - id: ping
+    title: "Ping"
+    description: 123
+    file: instance/ping.sql
+    scope: instance
+""",
+    )
+
+    with pytest.raises(ConfigError, match="description invalide"):
+        load_manifest(manifest, tmp_path / "queries")

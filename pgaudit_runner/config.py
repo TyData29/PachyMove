@@ -93,13 +93,21 @@ def load_manifest(
                 "(attendu : entier positif, ou absent)"
             )
 
+        raw_description = q.get("description")
+        if raw_description is not None and not isinstance(raw_description, str):
+            raise ConfigError(
+                f"'{qid}' : description invalide '{raw_description}' "
+                "(attendu : chaîne de caractères, ou absent)"
+            )
+        description = raw_description.strip() or None if raw_description else None
+
         specs.append(
             QuerySpec(
                 id=qid,
                 title=q["title"],
                 file=q["file"],
                 scope=q["scope"],
-                description=(q.get("description") or "").strip() or None,
+                description=description,
                 enabled=q.get("enabled", True),
                 tags=q.get("tags", []),
                 requires_superuser=q.get("requires_superuser", False),
