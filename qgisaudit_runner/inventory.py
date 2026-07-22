@@ -4,7 +4,7 @@ import csv
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from .datasource import determine_mode_connexion
 from .qgis_project import LayerInfo, ProjectParseError, parse_project
@@ -110,17 +110,19 @@ def build_project_result(path: Path, layers: list[LayerInfo]) -> ProjectResult:
     return result
 
 
-def _iter_project_files(racines: Iterable[Path], extensions: Iterable[str]) -> list[Path]:
+def _iter_project_files(racines: Iterable[Path], extensions: Iterable[str]) -> Iterator[Path]:
+    """Génère les fichiers correspondant aux `extensions` trouvés récursivement
+    dans `racines`, un à la fois (streaming). L'ordre de parcours dépend du
+    système de fichiers (pas de tri global, ce qui évite de matérialiser la
+    liste complète des chemins avant de commencer le traitement)."""
     exts = {e.lower() for e in extensions}
-    found: list[Path] = []
     for racine in racines:
         if not racine.exists():
             print(f"[avertissement] racine introuvable, ignorée : {racine}", file=sys.stderr)
             continue
         for path in racine.rglob("*"):
             if path.is_file() and path.suffix.lower() in exts:
-                found.append(path)
-    return sorted(found)
+                yield path
 
 
 def run_inventory(
@@ -129,30 +131,40 @@ def run_inventory(
     """Parcourt `racines` récursivement, inventorie les projets QGIS trouvés, et
     écrit projets.csv/couches_pg.csv dans `dossier_sortie`. Ne plante jamais sur
     un fichier individuel (spec §7) : erreurs logguées sur stderr, traitement
-    des autres fichiers poursuivi."""
-    files = _iter_project_files(racines, extensions)
+    des autres fichiers poursuivi.
 
-    results: list[ProjectResult] = []
-    for path in files:
-        try:
-            layers = parse_project(path)
-        except ProjectParseError as e:
-            print(f"[ignoré] {e}", file=sys.stderr)
-            continue
-        except Exception as e:  # défense large : un fichier ne doit jamais arrêter le scan
-            print(f"[ignoré] erreur inattendue sur {path} : {e}", file=sys.stderr)
-            continue
-        results.append(build_project_result(path, layers))
-
+    Les deux CSV sont écrits en flux continu (streaming) : chaque projet est
+    traité et écrit dès sa découverte, sans accumuler l'ensemble des chemins ou
+    des résultats en mémoire."""
     dossier_sortie.mkdir(parents=True, exist_ok=True)
     projets_csv = dossier_sortie / "projets.csv"
     couches_csv = dossier_sortie / "couches_pg.csv"
 
-    with open(projets_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=_PROJETS_COLUMNS)
-        writer.writeheader()
-        for r in results:
-            writer.writerow({
+    nb_fichiers = 0
+    nb_analyses = 0
+
+    with (
+        open(projets_csv, "w", newline="", encoding="utf-8") as fp,
+        open(couches_csv, "w", newline="", encoding="utf-8") as fc,
+    ):
+        pw = csv.DictWriter(fp, fieldnames=_PROJETS_COLUMNS)
+        pw.writeheader()
+        cw = csv.DictWriter(fc, fieldnames=_COUCHES_PG_COLUMNS)
+        cw.writeheader()
+
+        for path in _iter_project_files(racines, extensions):
+            nb_fichiers += 1
+            try:
+                layers = parse_project(path)
+            except ProjectParseError as e:
+                print(f"[ignoré] {e}", file=sys.stderr)
+                continue
+            except Exception as e:  # défense large : un fichier ne doit jamais arrêter le scan
+                print(f"[ignoré] erreur inattendue sur {path} : {e}", file=sys.stderr)
+                continue
+            r = build_project_result(path, layers)
+            nb_analyses += 1
+            pw.writerow({
                 "chemin": r.chemin,
                 "nom_projet": r.nom_projet,
                 "nb_couches_total": r.nb_couches_total,
@@ -166,16 +178,11 @@ def run_inventory(
                 "hosts_distincts": _LISTE_SEP.join(r.hosts_distincts),
                 "bases_distinctes": _LISTE_SEP.join(r.bases_distinctes),
             })
-
-    with open(couches_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=_COUCHES_PG_COLUMNS)
-        writer.writeheader()
-        for r in results:
             for row in r.couches_pg:
-                writer.writerow(row)
+                cw.writerow(row)
 
     print(
-        f"{len(results)} projet(s) analysé(s) sur {len(files)} fichier(s) trouvé(s).",
+        f"{nb_analyses} projet(s) analysé(s) sur {nb_fichiers} fichier(s) trouvé(s).",
         file=sys.stderr,
     )
     return projets_csv, couches_csv
