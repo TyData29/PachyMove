@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import psycopg
 
@@ -20,9 +20,118 @@ from .models import (
     RunSummary,
     SelectionInfo,
 )
-from .runner import run_query
+from .runner import run_derived_query, run_query
 
 TOOL_VERSION = "1.0.0"
+
+
+def _run_spec(
+    conn: psycopg.Connection,
+    spec: QuerySpec,
+    target: str,
+    read_only: bool,
+    side: str,
+    server_version_num: Optional[int],
+) -> QueryResult:
+    """Dispatch vers run_derived_query (requête "dérivée", iterate_over posé)
+    ou run_query (comportement standard, inchangé)."""
+    if spec.iterate_over:
+        result = run_derived_query(
+            conn, spec, target, read_only, side=side, server_version_num=server_version_num,
+        )
+        if spec.id == "deprecated_tables_no_recent_timestamp" and result.status == "success":
+            result = _aggregate_deprecated_tables(result)
+        elif spec.id == "true_duplicate_tables" and result.status == "success":
+            result = _aggregate_true_duplicates(result)
+        return result
+    return run_query(
+        conn, spec, target, read_only, side=side, server_version_num=server_version_num,
+    )
+
+
+def _aggregate_deprecated_tables(result: QueryResult) -> QueryResult:
+    """Post-traitement spécifique à `deprecated_tables_no_recent_timestamp`
+    (specs_data_quality_on_tables.md §4.4) : une table peut avoir plusieurs
+    colonnes temporelles, une ligne brute par colonne. On regroupe par table
+    (OU logique des trois seuils sur toutes ses colonnes), et on ne garde que
+    les tables sans aucune activité récente, classées par ancienneté."""
+    if not result.rows:
+        return result
+
+    groups: dict[tuple[Any, Any], dict[str, Any]] = {}
+    for row in result.rows:
+        key = (row.get("schema_"), row.get("relation"))
+        g = groups.setdefault(
+            key, {"recent_6_mois": False, "recent_1_an": False, "recent_3_ans": False, "erreur": None}
+        )
+        for champ in ("recent_6_mois", "recent_1_an", "recent_3_ans"):
+            if row.get(champ):
+                g[champ] = True
+        if row.get("erreur") and not g["erreur"]:
+            g["erreur"] = row["erreur"]
+
+    new_rows: list[dict[str, Any]] = []
+    for (schema_, relation), g in groups.items():
+        if g["recent_6_mois"]:
+            continue  # saine, absente du résultat
+
+        if g["erreur"] and not (g["recent_1_an"] or g["recent_3_ans"]):
+            new_rows.append({"schema_": schema_, "relation": relation, "verdict": None, "erreur": g["erreur"]})
+            continue
+
+        if g["recent_1_an"]:
+            verdict = "aucune activité depuis 6 mois"
+        elif g["recent_3_ans"]:
+            verdict = "aucune activité depuis 1 an"
+        else:
+            verdict = "aucune activité depuis 3 ans (potentiellement dépréciée)"
+        new_rows.append({"schema_": schema_, "relation": relation, "verdict": verdict})
+
+    columns = ["schema_", "relation", "verdict"]
+    if any("erreur" in r for r in new_rows):
+        columns.append("erreur")
+
+    return replace(result, rows=new_rows, row_count=len(new_rows), columns=columns)
+
+
+def _aggregate_true_duplicates(result: QueryResult) -> QueryResult:
+    """Post-traitement spécifique à `true_duplicate_tables` (specs_data_quality_on_tables.md
+    §4.5) : regroupe les candidats par (nb_lignes, empreinte) — un même contenu
+    garantit implicitement une même structure (pas besoin de reporter la
+    signature depuis la découverte). Un groupe de plus d'une table est un vrai
+    doublon."""
+    if not result.rows:
+        return result
+
+    groups: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
+    errors: list[dict[str, Any]] = []
+    for row in result.rows:
+        if row.get("erreur"):
+            errors.append(row)
+            continue
+        key = (row.get("nb_lignes"), row.get("empreinte"))
+        groups.setdefault(key, []).append(row)
+
+    new_rows: list[dict[str, Any]] = []
+    groupe_id = 0
+    for (nb_lignes, _empreinte), members in groups.items():
+        if len(members) < 2:
+            continue
+        groupe_id += 1
+        for m in members:
+            new_rows.append({
+                "groupe": groupe_id,
+                "schema_": m.get("schema_"),
+                "relation": m.get("relation"),
+                "nb_lignes": nb_lignes,
+            })
+    new_rows.extend(errors)
+
+    columns = ["groupe", "schema_", "relation", "nb_lignes"]
+    if errors:
+        columns.append("erreur")
+
+    return replace(result, rows=new_rows, row_count=len(new_rows), columns=columns)
 
 
 def _select_queries(
@@ -191,9 +300,9 @@ def collect(
                     server_version_num = get_server_version_num(conn)
                     source_info = (conn.info.host, conn.info.port)
                     for spec in instance_specs_source:
-                        results.append(run_query(
-                            conn, spec, "instance", read_only, side="source",
-                            server_version_num=server_version_num,
+                        results.append(_run_spec(
+                            conn, spec, "instance", read_only, "source",
+                            server_version_num,
                         ))
             except psycopg.OperationalError as exc:
                 for spec in instance_specs_source:
@@ -230,9 +339,9 @@ def collect(
                         row[0] for row in tconn.execute("SELECT datname FROM pg_database").fetchall()
                     }
                     for spec in instance_specs_target:
-                        results.append(run_query(
-                            tconn, spec, "instance", read_only, side="target",
-                            server_version_num=target_server_version_num,
+                        results.append(_run_spec(
+                            tconn, spec, "instance", read_only, "target",
+                            target_server_version_num,
                         ))
             except psycopg.OperationalError as exc:
                 target_error = str(exc).splitlines()[0]
@@ -254,9 +363,9 @@ def collect(
                         if server_version_num is None:
                             server_version_num = get_server_version_num(conn)
                         for spec in src_specs:
-                            results.append(run_query(
-                                conn, spec, dbname, read_only, side="source",
-                                server_version_num=server_version_num,
+                            results.append(_run_spec(
+                                conn, spec, dbname, read_only, "source",
+                                server_version_num,
                             ))
                 except psycopg.OperationalError as exc:
                     for spec in src_specs:
@@ -287,9 +396,9 @@ def collect(
                             if target_server_version_num is None:
                                 target_server_version_num = get_server_version_num(tconn)
                             for spec in tgt_specs:
-                                results.append(run_query(
-                                    tconn, spec, dbname, read_only, side="target",
-                                    server_version_num=target_server_version_num,
+                                results.append(_run_spec(
+                                    tconn, spec, dbname, read_only, "target",
+                                    target_server_version_num,
                                 ))
                     except psycopg.OperationalError as exc:
                         for spec in tgt_specs:

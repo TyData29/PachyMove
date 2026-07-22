@@ -22,6 +22,9 @@ class QuerySpec:
     min_server_version: Optional[int] = None  # format server_version_num (ex. 150000 = PG 15.0)
     max_server_version: Optional[int] = None  # format server_version_num (ex. 149999 = PG < 15.0)
     sql: Optional[str] = None  # chargé depuis le fichier .sql
+    iterate_over: Optional[str] = None  # chemin d'une requête de découverte (requête "dérivée")
+    iterate_over_sql: Optional[str] = None  # chargé depuis le fichier .sql pointé par iterate_over
+    sample_target_rows: Optional[int] = None  # TABLESAMPLE SYSTEM si reltuples dépasse ce seuil
 
 
 @dataclass

@@ -1,0 +1,51 @@
+meta:
+  name: "Contrôle qualité des données — scan par table"
+  version: "1.0"
+
+defaults:
+  statement_timeout_ms: 60000   # plus généreux qu'en v1 : tables potentiellement volumineuses
+  read_only: true
+
+queries:
+
+  - id: low_fill_rate_columns
+    title: "Colonnes avec un taux de remplissage < 10 %"
+    file: database/low_fill_rate_columns_scan.sql
+    iterate_over: database/discover_all_columns.sql
+    sample_target_rows: 15000
+    scope: database
+    enabled: true
+    tags: [qualite, scan]
+
+  - id: constant_value_columns
+    title: "Colonnes à valeur constante"
+    file: database/constant_value_columns_scan.sql
+    iterate_over: database/discover_all_columns.sql
+    sample_target_rows: 100000
+    scope: database
+    enabled: true
+    tags: [qualite, scan]
+
+  - id: real_invalid_geometries
+    title: "Géométries réellement invalides"
+    file: database/real_invalid_geometries_scan.sql
+    iterate_over: database/geometry_columns_discovery.sql
+    scope: database
+    enabled: true
+    tags: [postgis, qualite, scan]
+
+  - id: deprecated_tables_no_recent_timestamp
+    title: "Tables potentiellement dépréciées (aucune valeur récente — 6 mois / 1 an / 3 ans)"
+    file: database/deprecated_tables_scan.sql
+    iterate_over: database/discover_timestamp_columns.sql
+    scope: database
+    enabled: true
+    tags: [qualite, scan]
+
+  - id: true_duplicate_tables
+    title: "Tables en doublon (contenu identique)"
+    file: database/true_duplicate_tables_scan.sql
+    iterate_over: database/duplicate_tables_structure_candidates.sql
+    scope: database
+    enabled: true
+    tags: [qualite, scan]

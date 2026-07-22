@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import psycopg
+from psycopg import sql as pgsql
 
 from .models import ErrorDetail, QueryResult, QuerySpec
 
@@ -168,3 +169,168 @@ def run_query(
                 full_traceback=traceback.format_exc(),
             ),
         )
+
+
+def _sample_clause(sample_target_rows: Optional[int], lignes_estimees: Any) -> pgsql.Composable:
+    """TABLESAMPLE SYSTEM si l'estimation catalogue (reltuples) dépasse le seuil,
+    sinon clause vide. Jamais de scan pour calculer l'estimation ; jamais de
+    pourcentage en texte brut (composé via sql.Literal)."""
+    if not sample_target_rows or lignes_estimees is None:
+        return pgsql.SQL("")
+    try:
+        reltuples = float(lignes_estimees)
+    except (TypeError, ValueError):
+        return pgsql.SQL("")
+    if reltuples <= sample_target_rows:
+        return pgsql.SQL("")
+    pct = min(100.0, sample_target_rows / reltuples * 100)
+    return pgsql.SQL("TABLESAMPLE SYSTEM ({pct})").format(pct=pgsql.Literal(round(pct, 4)))
+
+
+def _compose_derived_sql(
+    template_sql: str, drow: dict[str, Any], sample_target_rows: Optional[int]
+) -> pgsql.Composed:
+    """Compose le gabarit d'une requête dérivée avec les valeurs d'une ligne de
+    découverte — toujours via sql.Identifier/sql.Literal (psycopg), jamais par
+    f-string ou .format() sur du texte brut : ce sont des identifiants d'objets
+    réels (schéma/table/colonne), l'injection doit rester impossible même avec
+    un nom d'objet exotique (espace, casse mixte, guillemet)."""
+    kwargs: dict[str, pgsql.Composable] = {
+        "sample": _sample_clause(sample_target_rows, drow.get("lignes_estimees")),
+    }
+    if drow.get("schema_") is not None:
+        kwargs["schema"] = pgsql.Identifier(drow["schema_"])
+    if drow.get("relation") is not None:
+        kwargs["table"] = pgsql.Identifier(drow["relation"])
+    if drow.get("colonne") is not None:
+        kwargs["column"] = pgsql.Identifier(drow["colonne"])
+    return pgsql.SQL(template_sql).format(**kwargs)
+
+
+def run_derived_query(
+    conn: psycopg.Connection,
+    spec: QuerySpec,
+    target: str,
+    read_only: bool = True,
+    side: str = "source",
+    server_version_num: Optional[int] = None,
+) -> QueryResult:
+    """Exécute une requête « dérivée » : une requête de découverte (catalogue),
+    puis le gabarit `spec.sql` une fois par ligne découverte, composé en toute
+    sécurité (cf. `_compose_derived_sql`). Toutes les lignes obtenues sont
+    concaténées en un seul `QueryResult` — une erreur sur une table donnée
+    n'interrompt pas le scan des autres (continue-on-error au niveau table,
+    même principe que le reste de l'outil au niveau requête)."""
+    assert spec.sql is not None
+    assert spec.iterate_over_sql is not None
+
+    version_skip = _version_gate_reason(spec, server_version_num)
+    if version_skip:
+        return QueryResult(
+            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            sql=spec.sql, status="skipped", skip_reason=version_skip,
+            requires_superuser=spec.requires_superuser,
+            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
+            side=side, applies_to=spec.applies_to,
+        )
+
+    if read_only and _WRITE_RE.search(_strip_sql_noise(spec.sql)):
+        return QueryResult(
+            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            sql=spec.sql, status="error",
+            requires_superuser=spec.requires_superuser,
+            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
+            side=side, applies_to=spec.applies_to,
+            error=ErrorDetail(
+                message="Requête rejetée : mot-clé d'écriture détecté (mode read_only actif)",
+                full_traceback="",
+            ),
+        )
+
+    if read_only and _WRITE_RE.search(_strip_sql_noise(spec.iterate_over_sql)):
+        return QueryResult(
+            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            sql=spec.sql, status="error",
+            requires_superuser=spec.requires_superuser,
+            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
+            side=side, applies_to=spec.applies_to,
+            error=ErrorDetail(
+                message="Requête de découverte rejetée : mot-clé d'écriture détecté (mode read_only actif)",
+                full_traceback="",
+            ),
+        )
+
+    started_at = datetime.now(tz=timezone.utc)
+
+    try:
+        if spec.statement_timeout_ms:
+            try:
+                timeout_ms = int(spec.statement_timeout_ms)
+            except (TypeError, ValueError):
+                timeout_ms = None
+            if timeout_ms:
+                conn.execute(
+                    pgsql.SQL("SET statement_timeout = {}").format(pgsql.Literal(timeout_ms))
+                )
+        disc_cur = conn.execute(spec.iterate_over_sql)
+        disc_columns = [d.name for d in disc_cur.description] if disc_cur.description else []
+        discovery_rows = [dict(zip(disc_columns, row)) for row in disc_cur.fetchall()]
+    except psycopg.Error as e:
+        duration_ms = int((datetime.now(tz=timezone.utc) - started_at).total_seconds() * 1000)
+        return QueryResult(
+            id=spec.id, title=spec.title, scope=spec.scope, target=target,
+            sql=spec.sql, status="error",
+            started_at=started_at.isoformat(), duration_ms=duration_ms,
+            requires_superuser=spec.requires_superuser,
+            expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
+            side=side, applies_to=spec.applies_to,
+            error=ErrorDetail(
+                sqlstate=getattr(e, "sqlstate", None),
+                message=f"Découverte échouée : {str(e).splitlines()[0]}",
+                full_traceback=traceback.format_exc(),
+            ),
+        )
+
+    rows: list[dict[str, Any]] = []
+    columns_order: list[str] = []
+
+    def _ensure_column(name: str) -> None:
+        if name not in columns_order:
+            columns_order.append(name)
+
+    for drow in discovery_rows:
+        ident: dict[str, Any] = {}
+        for key in ("schema_", "relation", "colonne"):
+            if drow.get(key) is not None:
+                ident[key] = _coerce(drow[key])
+                _ensure_column(key)
+        try:
+            composed = _compose_derived_sql(spec.sql, drow, spec.sample_target_rows)
+            cur = conn.execute(composed)
+            cur_columns = [d.name for d in cur.description] if cur.description else []
+            for row in cur.fetchall():
+                row_dict = dict(ident)
+                row_dict.update({col: _coerce(val) for col, val in zip(cur_columns, row)})
+                rows.append(row_dict)
+            for col in cur_columns:
+                _ensure_column(col)
+        except Exception as e:
+            # Exception large et non seulement psycopg.Error : une requête composée
+            # dynamiquement (gabarit + identifiants découverts à l'exécution) a une
+            # surface d'erreur plus large qu'une requête statique (ex. gabarit mal
+            # formé). Continue-on-error prime ici : une table ne doit jamais faire
+            # échouer les suivantes.
+            ident["erreur"] = str(e).splitlines()[0]
+            rows.append(ident)
+            _ensure_column("erreur")
+
+    duration_ms = int((datetime.now(tz=timezone.utc) - started_at).total_seconds() * 1000)
+    return QueryResult(
+        id=spec.id, title=spec.title, scope=spec.scope, target=target,
+        sql=spec.sql, status="success",
+        started_at=started_at.isoformat(), duration_ms=duration_ms,
+        requires_superuser=spec.requires_superuser,
+        columns=columns_order, rows=rows, row_count=len(rows),
+        expect_rows=spec.expect_rows, severity_if_unexpected=spec.severity_if_unexpected,
+        side=side, applies_to=spec.applies_to,
+    )

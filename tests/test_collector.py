@@ -8,8 +8,9 @@ from unittest.mock import MagicMock, patch
 import psycopg
 import pytest
 
-from pgaudit_runner.collector import collect
+from pgaudit_runner.collector import _aggregate_deprecated_tables, _aggregate_true_duplicates, collect
 from pgaudit_runner.config import ConfigError
+from pgaudit_runner.models import QueryResult
 
 
 def _write(tmp_path: Path, relpath: str, content: str) -> Path:
@@ -287,3 +288,79 @@ def test_database_absent_from_target_is_skipped_cleanly(tmp_path: Path):
     # Aucune tentative de connexion sur la base "db1" côté cible (absente) :
     target_db_calls = [c for c in mock_open.call_args_list if c.args and c.args[0] == "tgt-host" and len(c.args) > 3 and c.args[3] == "db1"]
     assert not target_db_calls
+
+
+# ── Post-traitement des requêtes dérivées (specs_data_quality_on_tables.md) ──
+
+
+def _result(rows: list[dict]) -> QueryResult:
+    return QueryResult(
+        id="q", title="Q", scope="database", target="db1", sql="...",
+        status="success", columns=["schema_", "relation", "colonne"], rows=rows, row_count=len(rows),
+    )
+
+
+def test_aggregate_deprecated_tables_healthy_table_is_dropped():
+    rows = [{"schema_": "public", "relation": "t1", "colonne": "c1",
+              "recent_6_mois": True, "recent_1_an": True, "recent_3_ans": True}]
+    result = _aggregate_deprecated_tables(_result(rows))
+    assert result.rows == []
+    assert result.row_count == 0
+
+
+def test_aggregate_deprecated_tables_classifies_by_oldest_threshold_crossed():
+    rows = [
+        {"schema_": "public", "relation": "t_6m", "colonne": "c",
+         "recent_6_mois": False, "recent_1_an": True, "recent_3_ans": True},
+        {"schema_": "public", "relation": "t_1y", "colonne": "c",
+         "recent_6_mois": False, "recent_1_an": False, "recent_3_ans": True},
+        {"schema_": "public", "relation": "t_3y", "colonne": "c",
+         "recent_6_mois": False, "recent_1_an": False, "recent_3_ans": False},
+    ]
+    result = _aggregate_deprecated_tables(_result(rows))
+
+    verdicts = {r["relation"]: r["verdict"] for r in result.rows}
+    assert verdicts["t_6m"] == "aucune activité depuis 6 mois"
+    assert verdicts["t_1y"] == "aucune activité depuis 1 an"
+    assert verdicts["t_3y"] == "aucune activité depuis 3 ans (potentiellement dépréciée)"
+
+
+def test_aggregate_deprecated_tables_ors_across_multiple_columns_of_same_table():
+    # Une colonne récente suffit à sauver la table, même si une autre ne l'est pas.
+    rows = [
+        {"schema_": "public", "relation": "t1", "colonne": "created_at",
+         "recent_6_mois": False, "recent_1_an": False, "recent_3_ans": False},
+        {"schema_": "public", "relation": "t1", "colonne": "updated_at",
+         "recent_6_mois": True, "recent_1_an": True, "recent_3_ans": True},
+    ]
+    result = _aggregate_deprecated_tables(_result(rows))
+    assert result.rows == []
+
+
+def test_aggregate_deprecated_tables_surfaces_error_when_no_signal_at_all():
+    rows = [{"schema_": "public", "relation": "t1", "colonne": "c", "erreur": "permission denied"}]
+    result = _aggregate_deprecated_tables(_result(rows))
+    assert result.rows[0]["erreur"] == "permission denied"
+    assert result.rows[0]["verdict"] is None
+
+
+def test_aggregate_true_duplicates_groups_matching_fingerprint_and_row_count():
+    rows = [
+        {"schema_": "a", "relation": "t1", "nb_lignes": 100, "empreinte": "hash1"},
+        {"schema_": "b", "relation": "t2", "nb_lignes": 100, "empreinte": "hash1"},
+        {"schema_": "c", "relation": "t3", "nb_lignes": 50, "empreinte": "hash2"},
+    ]
+    result = _aggregate_true_duplicates(_result(rows))
+
+    relations = {r["relation"] for r in result.rows}
+    assert relations == {"t1", "t2"}
+    assert result.rows[0]["groupe"] == result.rows[1]["groupe"]
+
+
+def test_aggregate_true_duplicates_no_match_yields_empty():
+    rows = [
+        {"schema_": "a", "relation": "t1", "nb_lignes": 100, "empreinte": "hash1"},
+        {"schema_": "b", "relation": "t2", "nb_lignes": 50, "empreinte": "hash2"},
+    ]
+    result = _aggregate_true_duplicates(_result(rows))
+    assert result.rows == []
