@@ -12,6 +12,11 @@ queries:
 
   - id: geometry_srid_missing
     title: "Colonnes géométrie sans SRID déclaré"
+    description: >
+      Une colonne géométrie sans SRID (srid=0) autorise des reprojections
+      silencieuses et des comparaisons spatiales dont le référentiel n'est en
+      réalité pas garanti identique — source classique de bugs difficiles à
+      diagnostiquer après coup.
     file: database/geometry_srid_missing.sql
     scope: database
     enabled: true
@@ -19,6 +24,11 @@ queries:
 
   - id: geometry_generic_type
     title: "Colonnes géométrie en type générique"
+    description: >
+      Une colonne déclarée en type géométrique générique (GEOMETRY plutôt que
+      POINT/POLYGON...) n'impose aucune contrainte de forme à l'insertion —
+      mélange de géométries hétérogènes dans une même colonne, souvent
+      découvert tard.
     file: database/geometry_generic_type.sql
     scope: database
     enabled: true
@@ -26,6 +36,10 @@ queries:
 
   - id: geometry_no_spatial_index
     title: "Colonnes géométrie sans index spatial"
+    description: >
+      Sans index spatial (GIST/SP-GIST), tout filtre ou jointure spatiale
+      dégénère en scan séquentiel — invisible sur une petite table de test,
+      bloquant en volume réel de production.
     file: database/geometry_no_spatial_index.sql
     scope: database
     enabled: true
@@ -33,6 +47,11 @@ queries:
 
   - id: geometry_no_validity_constraint
     title: "Colonnes géométrie sans contrainte de validité (indicateur indirect)"
+    description: >
+      Indicateur indirect : l'absence de contrainte CHECK(ST_IsValid(...))
+      ne prouve pas qu'il existe des géométries cassées, seulement que rien
+      ne l'empêche. Le vrai scan de données (data_quality_on_tables.yaml)
+      donne la réponse définitive.
     file: database/geometry_no_validity_constraint.sql
     scope: database
     enabled: true
@@ -40,6 +59,11 @@ queries:
 
   - id: tables_without_pk
     title: "Tables sans clé primaire"
+    description: >
+      Sans clé primaire, pas d'identité de ligne fiable : réplication
+      logique impossible, tout outil de synchronisation/CDC bloqué, upsert
+      applicatif fragile. À corriger avant toute réplication ou migration
+      incrémentale.
     file: database/tables_without_pk.sql
     scope: database
     enabled: true
@@ -47,6 +71,10 @@ queries:
 
   - id: vacuum_analyze_lag
     title: "VACUUM/ANALYZE en retard (bloat estimé)"
+    description: >
+      Ratio de lignes mortes élevé et/ou dernier VACUUM ancien : deux
+      signaux du même risque — statistiques obsolètes qui faussent les plans
+      de requête, et fichier de table gonflé qui ralentit tout accès.
     file: database/vacuum_analyze_lag.sql
     scope: database
     enabled: true
@@ -56,6 +84,11 @@ queries:
 
   - id: naming_convention_snake_case
     title: "Objets/colonnes non conformes à snake_case"
+    description: >
+      Recense les tables, colonnes et autres objets dont le nom ne respecte
+      pas la convention snake_case (majuscules, espaces, casse mixte). Un nom
+      hors convention oblige à le citer entre guillemets doubles partout,
+      source récurrente d'erreurs SQL.
     file: database/naming_convention_snake_case.sql
     scope: database
     enabled: true
@@ -65,6 +98,11 @@ queries:
 
   - id: sequences_near_limit
     title: "Séquences proches de leur valeur maximale"
+    description: >
+      Une séquence proche de sa valeur maximale entraîne une panne
+      applicative certaine au premier INSERT suivant l'épuisement —
+      violation de contrainte ou dépassement de type selon le cas. À
+      détecter avant que ça n'arrive en production.
     file: database/sequences_near_limit.sql
     scope: database
     enabled: true
@@ -72,6 +110,11 @@ queries:
 
   - id: fk_like_columns_without_constraint
     title: "Colonnes *_id sans contrainte FK déclarée (heuristique)"
+    description: >
+      Heuristique de nommage, pas une preuve : une colonne *_id sans clé
+      étrangère déclarée est un candidat à vérifier manuellement — peut être
+      un identifiant externe légitime, ou un oubli qui laisse s'accumuler des
+      orphelins silencieux.
     file: database/fk_like_columns_without_constraint.sql
     scope: database
     enabled: true
@@ -79,6 +122,10 @@ queries:
 
   - id: tables_without_comment
     title: "Tables sans commentaire (pg_description)"
+    description: >
+      Signal faible, purement informatif : utile pour prioriser la
+      documentation d'un schéma repris sans historique, notamment en début
+      de mission sur une base peu connue.
     file: database/tables_without_comment.sql
     scope: database
     enabled: true
@@ -86,6 +133,12 @@ queries:
 
   - id: duplicate_tables_across_schemas
     title: "Tables en doublon entre schémas (même nom et/ou même structure — catalogue seul)"
+    description: >
+      Repère les tables de même nom et/ou de même structure de colonnes
+      présentes dans plusieurs schémas — indice d'une duplication historique
+      (environnements mélangés, migration partielle). Catalogue seul : ne dit
+      pas si le contenu est identique (cf. true_duplicate_tables du scan par
+      table).
     file: database/duplicate_tables_across_schemas.sql
     scope: database
     enabled: true
@@ -93,6 +146,10 @@ queries:
 
   - id: most_accessed_tables
     title: "Classement des tables les plus accédées (top 20)"
+    description: >
+      Classement informatif, pas un contrôle bloquant : les tables les plus
+      lues relativement à leur taille sont celles à surveiller en priorité
+      pour l'indexation, le VACUUM, ou un futur partitionnement.
     file: database/most_accessed_tables.sql
     scope: database
     enabled: true

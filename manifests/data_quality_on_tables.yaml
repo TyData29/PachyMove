@@ -10,6 +10,11 @@ queries:
 
   - id: low_fill_rate_columns
     title: "Colonnes avec un taux de remplissage < 10 %"
+    description: >
+      Une colonne quasiment toujours NULL est souvent un champ mort
+      (fonctionnalité abandonnée, migration partielle) ou mal exploité —
+      candidat à ne pas reprendre tel quel dans un nouveau modèle de données.
+      Échantillonné sur les grosses tables (TABLESAMPLE SYSTEM).
     file: database/low_fill_rate_columns_scan.sql
     iterate_over: database/discover_all_columns.sql
     sample_target_rows: 15000
@@ -19,6 +24,12 @@ queries:
 
   - id: constant_value_columns
     title: "Colonnes à valeur constante"
+    description: >
+      Une colonne qui n'a jamais qu'une seule valeur distincte sur toute la
+      table interroge : champ vestige, valeur par défaut jamais changée, ou
+      logique métier qui devrait être une contrainte plutôt qu'une colonne.
+      Échantillonné, avec un seuil plus large que le taux de remplissage pour
+      ne pas rater une valeur rare qui invaliderait le constat.
     file: database/constant_value_columns_scan.sql
     iterate_over: database/discover_all_columns.sql
     sample_target_rows: 100000
@@ -28,6 +39,12 @@ queries:
 
   - id: real_invalid_geometries
     title: "Géométries réellement invalides"
+    description: >
+      Contrairement à l'indicateur indirect de data_quality.yaml (absence de
+      contrainte), ce contrôle lit réellement les données via ST_IsValid : la
+      réponse définitive à "y a-t-il des géométries cassées dans cette
+      table ?". Pas d'échantillonnage : une géométrie invalide rare est
+      justement celle qu'on ne veut pas rater.
     file: database/real_invalid_geometries_scan.sql
     iterate_over: database/geometry_columns_discovery.sql
     scope: database
@@ -36,6 +53,12 @@ queries:
 
   - id: deprecated_tables_no_recent_timestamp
     title: "Tables potentiellement dépréciées (aucune valeur récente — 6 mois / 1 an / 3 ans)"
+    description: >
+      Une table dont aucune colonne date/timestamp ne dépasse le seuil le
+      plus permissif (6 mois) est probablement encore active ; au-delà de 3
+      ans sans aucune valeur récente, c'est un candidat sérieux à exclure du
+      périmètre de migration ou à archiver. Utile pour ne pas migrer du
+      passif inutilement.
     file: database/deprecated_tables_scan.sql
     iterate_over: database/discover_timestamp_columns.sql
     scope: database
@@ -44,6 +67,11 @@ queries:
 
   - id: true_duplicate_tables
     title: "Tables en doublon (contenu identique)"
+    description: >
+      Va au-delà du signal catalogue de data_quality.yaml (même nom/même
+      structure) : compare le contenu réel des tables candidates. Une vraie
+      copie intégrale est un cas net à trancher avant migration — laquelle
+      garder, laquelle abandonner — plutôt qu'à migrer en double par prudence.
     file: database/true_duplicate_tables_scan.sql
     iterate_over: database/duplicate_tables_structure_candidates.sql
     scope: database

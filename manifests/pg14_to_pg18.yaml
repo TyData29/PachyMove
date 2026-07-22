@@ -12,6 +12,10 @@ queries:
 
   - id: list_databases
     title: "Inventaire des bases et tailles"
+    description: >
+      Point de départ du dimensionnement de la migration : combien de bases,
+      quel volume chacune. Sert à estimer la durée d'un dump/restore et à
+      vérifier qu'aucune base n'est oubliée du périmètre de migration.
     file: instance/list_databases.sql
     scope: instance
     enabled: true
@@ -19,6 +23,11 @@ queries:
 
   - id: server_config
     title: "Configuration serveur (paramètres clés)"
+    description: >
+      Relève les paramètres serveur qui influencent le comportement applicatif
+      (mémoire, connexions, timeouts...). Comparé source/cible (side: both)
+      pour repérer les écarts de configuration qui changeraient le
+      comportement observé après bascule.
     file: instance/server_config.sql
     scope: instance
     enabled: true
@@ -27,6 +36,11 @@ queries:
 
   - id: available_extensions
     title: "Extensions disponibles (comparaison source/cible)"
+    description: >
+      Compare les extensions disponibles sur le serveur cible à celles
+      installées côté source. Une extension utilisée en production mais
+      absente côté cible bloque la restauration ou casse le fonctionnement
+      applicatif après migration.
     file: instance/available_extensions.sql
     scope: instance
     enabled: true
@@ -35,6 +49,11 @@ queries:
 
   - id: collation_versions
     title: "Versions de collation (comparaison source/cible)"
+    description: >
+      Compare le fournisseur et la version de collation entre les deux
+      serveurs (ex. Windows source vs glibc cible). Un changement de
+      fournisseur invalide silencieusement le tri des index texte après
+      migration — seul moyen de le voir avant de migrer.
     file: instance/collation_versions.sql
     scope: instance
     enabled: true
@@ -43,6 +62,11 @@ queries:
 
   - id: roles
     title: "Rôles PostgreSQL"
+    description: >
+      Inventaire complet des rôles et de leurs attributs (superuser, login,
+      limites de connexion...). Base de comparaison pour vérifier qu'aucun
+      rôle n'est oublié côté cible, et point de croisement avec l'audit des
+      droits (rights_audit.yaml).
     file: instance/roles.sql
     scope: instance
     enabled: true
@@ -50,6 +74,11 @@ queries:
 
   - id: replication_slots
     title: "Slots de réplication"
+    description: >
+      Un slot de réplication (logique ou physique) doit être géré
+      explicitement lors d'une migration. Un slot orphelin après bascule
+      retient les WAL indéfiniment côté source et peut saturer le disque sans
+      autre symptôme visible.
     file: instance/replication_slots.sql
     scope: instance
     enabled: true
@@ -57,6 +86,11 @@ queries:
 
   - id: auth_md5_check
     title: "Rôles avec mot de passe MD5"
+    description: >
+      Recherche dans pg_hba.conf les entrées en authentification MD5,
+      dépréciée par PostgreSQL. Désactivé par défaut (nécessite un accès
+      superuser à pg_authid) : md5_roles couvre le même risque côté
+      catalogue sans ce prérequis — gardé ici pour référence.
     file: instance/auth_md5_check.sql
     scope: instance
     enabled: false
@@ -68,6 +102,11 @@ queries:
 
   - id: database_collation_version
     title: "Version de collation par défaut des bases (vs système)"
+    description: >
+      Bloquant majeur : compare, pour chaque base, la version de collation
+      enregistrée à sa création à la version système actuelle. Un écart
+      signifie que les index texte sont potentiellement corrompus (tri
+      silencieusement faux) — REINDEX obligatoire avant ou après migration.
     file: instance/database_collation_version.sql
     scope: instance
     enabled: true
@@ -76,6 +115,11 @@ queries:
 
   - id: database_collation_locale
     title: "Locale de collation par défaut des bases (inventaire, PG < 15)"
+    description: >
+      Équivalent dégradé de database_collation_version sur une source
+      antérieure à PG15 : aucune détection automatique de dérive n'y est
+      possible (mécanisme absent), donc simple inventaire de la locale par
+      base, à vérifier manuellement contre le système cible.
     file: instance/database_collation_locale.sql
     scope: instance
     enabled: true
@@ -84,6 +128,11 @@ queries:
 
   - id: data_checksums
     title: "Sommes de contrôle désactivées"
+    description: >
+      PG18 active les sommes de contrôle par défaut à l'initialisation d'une
+      instance. pg_upgrade exige que source et cible aient le même réglage —
+      sans objet en dump/restore, où la cible est réinitialisée
+      indépendamment de la source.
     file: instance/data_checksums.sql
     scope: instance
     enabled: true
@@ -92,6 +141,10 @@ queries:
 
   - id: prepared_xacts
     title: "Transactions préparées en attente"
+    description: >
+      Une transaction préparée en attente bloque net un pg_upgrade. Souvent
+      le résidu d'un applicatif transactionnel mal arrêté — à résoudre côté
+      client avant toute tentative de migration.
     file: instance/prepared_xacts.sql
     scope: instance
     enabled: true
@@ -100,6 +153,11 @@ queries:
 
   - id: tablespaces
     title: "Tablespaces personnalisés (hors pg_default/pg_global)"
+    description: >
+      Un tablespace personnalisé complique pg_upgrade : son chemin doit
+      exister à l'identique côté cible. Sans objet en dump/restore, où les
+      données sont réécrites indépendamment de leur emplacement physique
+      d'origine.
     file: instance/tablespaces.sql
     scope: instance
     enabled: true
@@ -108,6 +166,11 @@ queries:
 
   - id: db_encoding_locale
     title: "Bases en SQL_ASCII, non connectables ou marquées invalides"
+    description: >
+      Signale les bases en SQL_ASCII (aucune validation d'encodage, bombe à
+      retardement), non connectables, ou marquées invalides (résidu d'un DROP
+      DATABASE interrompu) — à traiter avant toute migration, quelle que soit
+      la méthode retenue.
     file: instance/db_encoding_locale.sql
     scope: instance
     enabled: true
@@ -115,6 +178,10 @@ queries:
 
   - id: shared_preload_libraries
     title: "Bibliothèques préchargées (shared_preload_libraries)"
+    description: >
+      Inventaire, pas une détection (renvoie des lignes même quand tout va
+      bien) : ces bibliothèques doivent exister côté serveur cible pour que
+      la configuration soit rejouable telle quelle après migration.
     file: instance/shared_preload_libraries.sql
     scope: instance
     enabled: true
@@ -124,6 +191,10 @@ queries:
 
   - id: removed_gucs
     title: "Paramètres serveur supprimés ou renommés (PG15-PG17)"
+    description: >
+      Paramètres présents en PG14 mais supprimés ou renommés d'ici PG18 (ex.
+      stats_temp_directory). Une configuration copiée telle quelle vers la
+      cible refuse de démarrer ou ignore silencieusement le réglage.
     file: instance/removed_gucs.sql
     scope: instance
     enabled: true
@@ -131,6 +202,11 @@ queries:
 
   - id: md5_roles
     title: "Rôles avec mot de passe MD5 (pg_authid)"
+    description: >
+      PG18 déprécie l'authentification par mot de passe MD5 (avertissements à
+      la création/modification de rôle, retrait prévu à terme). Migrer ces
+      rôles vers SCRAM est possible dès PG14, avant la migration —
+      pas la peine d'attendre.
     file: instance/md5_roles.sql
     scope: instance
     enabled: true
@@ -141,6 +217,10 @@ queries:
 
   - id: extensions
     title: "Extensions installées"
+    description: >
+      Inventaire des extensions installées par base, versions incluses. Sert
+      de base de comparaison avec available_extensions (disponibilité côté
+      cible) et anticipe les extensions à réinstaller après migration.
     file: database/extensions.sql
     scope: database
     enabled: true
@@ -148,6 +228,11 @@ queries:
 
   - id: postgis_version
     title: "Version PostGIS et composants"
+    description: >
+      Version de PostGIS et de ses composants (GEOS, PROJ, raster). Une
+      version PostGIS incompatible avec la version cible de PostgreSQL bloque
+      la restauration des bases SIG — vérification prioritaire pour toute
+      mission à composante géospatiale.
     file: database/postgis_version.sql
     scope: database
     enabled: true
@@ -155,6 +240,11 @@ queries:
 
   - id: fdw_servers
     title: "Foreign servers et options"
+    description: >
+      Foreign servers (postgres_fdw ou autre) et leurs options de connexion.
+      Ces connexions externes dépendent de serveurs distants qui doivent
+      rester joignables après la migration — un hôte oublié dans les options
+      casse silencieusement la table étrangère.
     file: database/fdw_servers.sql
     scope: database
     enabled: true
@@ -162,6 +252,10 @@ queries:
 
   - id: fdw_foreign_tables
     title: "Foreign tables"
+    description: >
+      Foreign tables déclarées, à revalider après migration (leur définition
+      ne survit pas forcément identique selon la méthode retenue). Complète
+      l'inventaire fdw_servers.
     file: database/fdw_foreign_tables.sql
     scope: database
     enabled: true
@@ -169,6 +263,11 @@ queries:
 
   - id: public_schema_objects
     title: "Objets dans le schéma public"
+    description: >
+      Inventaire des objets présents dans le schéma public. Utile pour
+      évaluer l'impact du changement de droits par défaut sur public en PG15+
+      (cf. public_schema_create_acl) et pour repérer un usage non
+      conventionnel du schéma par défaut.
     file: database/public_schema_objects.sql
     scope: database
     enabled: true
@@ -176,6 +275,10 @@ queries:
 
   - id: generated_columns
     title: "Colonnes générées (GENERATED ALWAYS)"
+    description: >
+      Colonnes générées, stockées ou virtuelles (attgenerated). PG18 fait des
+      colonnes virtuelles le nouveau défaut ; un DDL rejoué tel quel après
+      migration peut changer de sémantique sans erreur visible.
     file: database/generated_columns.sql
     scope: database
     enabled: true
@@ -183,6 +286,11 @@ queries:
 
   - id: publications
     title: "Publications de réplication logique"
+    description: >
+      Publications de réplication logique définies sur la source. À recréer
+      explicitement côté cible si la réplication doit continuer après
+      migration — rien ne les recrée automatiquement lors d'un dump/restore
+      standard.
     file: database/publications.sql
     scope: database
     enabled: true
@@ -192,6 +300,11 @@ queries:
 
   - id: collation_version_mismatch
     title: "Collations dont la version système a changé"
+    description: >
+      Pendant de database_collation_version au niveau des collations nommées
+      explicitement (pg_collation), plutôt que la collation par défaut de la
+      base. Même risque : un index texte peut être silencieusement faux
+      après une mise à jour système.
     file: database/collation_version_mismatch.sql
     scope: database
     enabled: true
@@ -199,6 +312,11 @@ queries:
 
   - id: reg_type_columns
     title: "Colonnes de type reg* (OID non portables entre instances)"
+    description: >
+      Une colonne de type reg* (regclass, regproc...) stocke un OID de
+      catalogue, non portable d'une instance à l'autre. pg_dump ne peut pas
+      la restituer fiablement — sans objet en pg_upgrade, où les OID restent
+      stables (même cluster physique).
     file: database/reg_type_columns.sql
     scope: database
     enabled: true
@@ -207,6 +325,11 @@ queries:
 
   - id: invalid_indexes
     title: "Index invalides, non prêts ou non live"
+    description: >
+      Un index invalide, non prêt ou non live (résidu fréquent d'un REINDEX
+      CONCURRENTLY interrompu) doit être reconstruit ou supprimé avant
+      migration — sa seule présence peut fausser silencieusement les
+      résultats des requêtes qui s'appuient dessus.
     file: database/invalid_indexes.sql
     scope: database
     enabled: true
@@ -214,6 +337,11 @@ queries:
 
   - id: catalog_dependent_views
     title: "Vues/vues matérialisées dépendant du catalogue système"
+    description: >
+      Une vue ou vue matérialisée qui lit directement le catalogue système
+      (pg_stat_activity, pg_shadow...) peut casser après migration : les
+      colonnes des catalogues changent entre versions majeures sans garantie
+      de compatibilité.
     file: database/catalog_dependent_views.sql
     scope: database
     enabled: true
@@ -223,6 +351,12 @@ queries:
 
   - id: functions_without_search_path
     title: "Fonctions indexées/matérialisées sans search_path fixé"
+    description: >
+      Le plus vicieux des deltas 15→18 : depuis PG17, les opérations de
+      maintenance (VACUUM, REINDEX, CLUSTER...) tournent avec un search_path
+      restreint. Une fonction indexée/matérialisée sans search_path fixé
+      échoue au premier VACUUM en production, parfois des semaines après la
+      migration.
     file: database/functions_without_search_path.sql
     scope: database
     enabled: true
@@ -230,6 +364,10 @@ queries:
 
   - id: removed_contribs
     title: "Extensions contrib supprimées (ex. adminpack)"
+    description: >
+      Extensions contrib présentes en PG14 mais supprimées d'ici PG18 (ex.
+      adminpack, retiré en PG17). Leur absence côté cible fait échouer la
+      restauration si elles sont référencées dans le dump.
     file: database/removed_contribs.sql
     scope: database
     enabled: true
@@ -237,6 +375,10 @@ queries:
 
   - id: unlogged_partitioned
     title: "Tables partitionnées UNLOGGED (interdit en PG18)"
+    description: >
+      PG18 interdit les tables partitionnées déclarées UNLOGGED (acceptées
+      avant, mais sans effet réel). Un DDL de recréation rejoué tel quel
+      après migration échoue purement et simplement.
     file: database/unlogged_partitioned.sql
     scope: database
     enabled: true
@@ -244,6 +386,12 @@ queries:
 
   - id: public_schema_create_acl
     title: "Droit CREATE encore accordé à PUBLIC sur le schéma public"
+    description: >
+      Depuis PG15, le schéma public n'accorde plus le droit CREATE à PUBLIC
+      par défaut. Une ligne ici est plutôt rassurante côté source (le droit
+      existe encore) — son absence signale un applicatif potentiellement déjà
+      cassé s'il créait des tables temporaires dans public sans droit
+      explicite.
     file: database/public_schema_create_acl.sql
     scope: database
     enabled: true

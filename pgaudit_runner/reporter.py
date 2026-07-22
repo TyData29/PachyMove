@@ -325,6 +325,11 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
             f"## {first['title']}",
             f"**id :** `{qid}` | **scope :** `{first['scope']}`{superuser_note}\n",
         ]
+        if first.get("description"):
+            # Préfixe chaque ligne avec "> " : une description multi-lignes non
+            # préfixée casserait le rendu blockquote Markdown après la première ligne.
+            quoted = "\n".join(f"> {ln}" for ln in first["description"].strip().splitlines())
+            lines.append(f"{quoted}\n")
 
         target_group = [r for r in group if r.get("side") == "target"]
 
