@@ -19,10 +19,11 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 pgaudit-runner = "pgaudit_runner.cli:cli"
+qgisaudit-runner = "qgisaudit_runner.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["pgaudit_runner*"]
+include = ["pgaudit_runner*", "qgisaudit_runner*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
