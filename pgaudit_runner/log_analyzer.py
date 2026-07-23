@@ -16,9 +16,17 @@ _LINE_RE = re.compile(
 )
 
 _RECEIVED_RE = re.compile(r"^connection received:\s+host=(?P<host>\S+?)(?:\s+port=\d+)?$")
+_RECEIVED_FR_RE = re.compile(r"^connexion reçue\s*:\s*hôte=(?P<host>\S+?)(?:\s+port=\d+)?$")
 
 _AUTHORIZED_RE = re.compile(
     r"^connection authorized:\s+user=(?P<user>\S+)\s+database=(?P<database>\S+)"
+    r"(?:\s+application_name=(?P<application>.*))?$"
+)
+# lc_messages=fr_FR (courant sur les instances Windows en mission) : mêmes
+# informations, texte et ordre différents — "base de données" n'a pas de
+# clé=valeur, la base suit directement.
+_AUTHORIZED_FR_RE = re.compile(
+    r"^connexion autorisée\s*:\s*utilisateur=(?P<user>\S+)\s+base de données\s+(?P<database>\S+)"
     r"(?:\s+application_name=(?P<application>.*))?$"
 )
 
@@ -64,61 +72,69 @@ def analyze_directory(
 
     for file in files:
         pending_host_by_pid.clear()
-        with file.open("r", encoding="utf-8", errors="replace") as fh:
-            for line_number, raw_line in enumerate(fh, start=1):
-                line = raw_line.rstrip("\n")
-                if not line.strip():
-                    continue
-                lines_total += 1
+        raw = file.read_bytes()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            # Logs PostgreSQL sous Windows (mission CCPCAM) : encodage cp1252,
+            # pas UTF-8 — décodés en UTF-8 ils ne produisent que des '�'
+            # et aucune ligne ne matche plus jamais. errors="replace" en
+            # dernier recours plutôt qu'un plantage sur un octet imprévu.
+            text = raw.decode("cp1252", errors="replace")
+        for line_number, raw_line in enumerate(text.splitlines(), start=1):
+            line = raw_line
+            if not line.strip():
+                continue
+            lines_total += 1
 
-                m = _LINE_RE.match(line)
-                if not m:
-                    lines_prefix_unrecognized += 1
-                    if len(unparsed_sample) < unparsed_sample_size:
-                        unparsed_sample.append(
-                            {"file": file.name, "line_number": line_number, "text": line[:300]}
-                        )
-                    continue
+            m = _LINE_RE.match(line)
+            if not m:
+                lines_prefix_unrecognized += 1
+                if len(unparsed_sample) < unparsed_sample_size:
+                    unparsed_sample.append(
+                        {"file": file.name, "line_number": line_number, "text": line[:300]}
+                    )
+                continue
 
-                ts = m.group("ts")
-                pid = m.group("pid")
-                message = m.group("message")
+            ts = m.group("ts")
+            pid = m.group("pid")
+            message = m.group("message")
 
-                received = _RECEIVED_RE.match(message)
-                if received:
-                    pending_host_by_pid[pid] = received.group("host")
-                    lines_matched += 1
-                    continue
+            received = _RECEIVED_RE.match(message) or _RECEIVED_FR_RE.match(message)
+            if received:
+                pending_host_by_pid[pid] = received.group("host")
+                lines_matched += 1
+                continue
 
-                authorized = _AUTHORIZED_RE.match(message)
-                if authorized:
-                    lines_matched += 1
-                    connections_total += 1
-                    user = authorized.group("user")
-                    database = authorized.group("database")
-                    application = authorized.group("application")
-                    host = pending_host_by_pid.pop(pid, None)
+            authorized = _AUTHORIZED_RE.match(message) or _AUTHORIZED_FR_RE.match(message)
+            if authorized:
+                lines_matched += 1
+                connections_total += 1
+                user = authorized.group("user")
+                database = authorized.group("database")
+                application = authorized.group("application")
+                host = pending_host_by_pid.pop(pid, None)
 
-                    if first_seen is None or ts < first_seen:
-                        first_seen = ts
-                    if last_seen is None or ts > last_seen:
-                        last_seen = ts
+                if first_seen is None or ts < first_seen:
+                    first_seen = ts
+                if last_seen is None or ts > last_seen:
+                    last_seen = ts
 
-                    stats = roles.setdefault(user, RoleStats())
-                    stats.connection_count += 1
-                    _bump(stats.databases, database)
-                    _bump(stats.source_hosts, host)
-                    _bump(stats.applications, application)
-                    if stats.first_seen is None or ts < stats.first_seen:
-                        stats.first_seen = ts
-                    if stats.last_seen is None or ts > stats.last_seen:
-                        stats.last_seen = ts
-                    continue
+                stats = roles.setdefault(user, RoleStats())
+                stats.connection_count += 1
+                _bump(stats.databases, database)
+                _bump(stats.source_hosts, host)
+                _bump(stats.applications, application)
+                if stats.first_seen is None or ts < stats.first_seen:
+                    stats.first_seen = ts
+                if stats.last_seen is None or ts > stats.last_seen:
+                    stats.last_seen = ts
+                continue
 
-                # Ligne au bon format (préfixe reconnu) mais message non reconnu
-                # (checkpoint, autovacuum, etc. — tout événement hors connexion) :
-                # ignorée sans compter comme "non parsée", c'est le cas normal et
-                # majoritaire d'un vrai fichier de log, pas une anomalie.
+            # Ligne au bon format (préfixe reconnu) mais message non reconnu
+            # (checkpoint, autovacuum, etc. — tout événement hors connexion) :
+            # ignorée sans compter comme "non parsée", c'est le cas normal et
+            # majoritaire d'un vrai fichier de log, pas une anomalie.
 
     return {
         "metadata": {
