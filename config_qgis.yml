@@ -1,0 +1,16 @@
+# Copier en config_qgis.yml (ou passer --config) et adapter les chemins.
+# Lecture seule : aucun secret nécessaire.
+
+racines:
+# Exemples : 
+# - "M:\\SIG\\projets"
+  - "L:\\SIG\\15_Projets"
+  - "S:\\6_Temporaire"
+  - "S:\\11_Projets"
+# - "S:\\Partage\\QGIS"
+
+extensions:
+  - ".qgs"
+  - ".qgz"
+
+dossier_sortie: "output"
