@@ -151,3 +151,38 @@ def test_analyze_directory_empty_directory_yields_zero_counts(tmp_path: Path):
     assert result["metadata"]["lines_total"] == 0
     assert result["roles"] == {}
     assert result["metadata"]["period"] == {"first_seen": None, "last_seen": None}
+
+
+def test_analyze_directory_parses_french_locale_messages(tmp_path: Path):
+    # lc_messages=fr_FR (mission CCPCAM, serveur Windows) : texte et ordre
+    # différents du gabarit anglais ("base de données" sans "=").
+    _write(tmp_path, "postgresql.log", """\
+2026-07-23 08:00:00.100 CEST [1001] LOG:  connexion reçue : hôte=10.0.0.5 port=54321
+2026-07-23 08:00:00.150 CEST [1001] LOG:  connexion autorisée : utilisateur=alice base de données mydb application_name=pgAdmin 4 - DB:mydb
+""")
+
+    result = analyze_directory(tmp_path)
+
+    assert result["metadata"]["connections_total"] == 1
+    alice = result["roles"]["alice"]
+    assert alice["databases"] == {"mydb": 1}
+    assert alice["source_hosts"] == {"10.0.0.5": 1}
+    assert alice["applications"] == {"pgAdmin 4 - DB:mydb": 1}
+
+
+def test_analyze_directory_falls_back_to_cp1252_for_non_utf8_files(tmp_path: Path):
+    # Logs PostgreSQL Windows réels (mission CCPCAM) : encodage cp1252, pas
+    # UTF-8. Décodés en UTF-8 (même avec errors="replace"), les caractères
+    # accentués deviennent des '�' et cassent tout : "autorisée"
+    # devient "autoris�e", qui ne matche plus aucune regex.
+    path = tmp_path / "postgresql.log"
+    content = (
+        "2026-07-23 08:00:00.100 CEST [1001] LOG:  connexion reçue : hôte=10.0.0.5 port=1\n"
+        "2026-07-23 08:00:00.150 CEST [1001] LOG:  connexion autorisée : utilisateur=alice base de données mydb\n"
+    )
+    path.write_bytes(content.encode("cp1252"))
+
+    result = analyze_directory(tmp_path)
+
+    assert result["metadata"]["connections_total"] == 1
+    assert result["roles"]["alice"]["source_hosts"] == {"10.0.0.5": 1}
