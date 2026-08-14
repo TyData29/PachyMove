@@ -362,6 +362,34 @@ queries:
     enabled: true
     tags: [delta]
 
+  - id: fts_trgm_reindex_candidates
+    title: "Index tsvector/pg_trgm à réindexer après migration (PG18)"
+    description: >
+      PG18 fait dépendre la recherche plein texte et pg_trgm du fournisseur
+      de collation par défaut du cluster (plus systématiquement libc) — ces
+      index peuvent nécessiter un REINDEX après la migration. Inventaire,
+      pas un défaut : ne s'applique que si le fournisseur par défaut de la
+      cible diffère de libc. NON VALIDÉ contre un serveur réel (unnest sur
+      indclass/pg_opclass) — à confirmer au premier run, contrairement au
+      reste du manifeste.
+    file: database/fts_trgm_reindex_candidates.sql
+    scope: database
+    enabled: true
+    tags: [delta]
+
+  - id: tg_relname_usage
+    title: "Fonctions trigger utilisant TG_RELNAME (variable dépréciée)"
+    description: >
+      TG_RELNAME est documentée comme dépréciée et pourrait disparaître dans
+      une future version majeure — remplacée depuis longtemps par
+      TG_TABLE_NAME, sans perte de fonctionnalité. Heuristique de scan du
+      texte source : signal fiable vu la spécificité du nom, mais ne prouve
+      pas formellement l'usage réel (pourrait être en commentaire).
+    file: database/tg_relname_usage.sql
+    scope: database
+    enabled: true
+    tags: [delta]
+
   - id: removed_contribs
     title: "Extensions contrib supprimées (ex. adminpack)"
     description: >

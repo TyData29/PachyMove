@@ -62,7 +62,7 @@ pgaudit-runner collect `
   --output output/
 ```
 
-Produit : `output/audit_<YYYYMMDD>_<HHMMSS>.json` **et** `output/rapport_<YYYYMMDD>_<HHMMSS>.md` (le rapport Markdown est généré automatiquement après la collecte — `--no-with-report` pour ne produire que le JSON).
+Produit : `output/audit_<manifeste>_<YYYYMMDD>_<HHMMSS>.json` **et** `output/rapport_<manifeste>_<YYYYMMDD>_<HHMMSS>.md` (le rapport Markdown est généré automatiquement après la collecte — `--no-with-report` pour ne produire que le JSON). `<manifeste>` est le nom de fichier du manifeste sans extension (ex. `pg14_to_pg18`), utile pour distinguer les runs quand plusieurs manifestes sont lancés dans le même dossier `output/`.
 
 ### 2. Régénérer le rapport (sans connexion, depuis un JSON existant)
 
@@ -100,6 +100,7 @@ Produit un fichier HTML autonome (CSS intégrée, aucune dépendance externe, au
 | `--dry-run` | Simule sans connexion réelle (vérifie ce qui serait lancé) — `--host`/`--user`/`--output` deviennent optionnels (`output/` par défaut) |
 | `--no-with-report` | Ne produit que le JSON, sans générer le rapport Markdown automatiquement |
 | `--max-rows 200` | Seuil de troncature du rapport auto-généré (défaut : 100) |
+| `--work-mem 256MB` | `SET work_mem` en début de session — utile pour les scans lourds (`data_quality_on_tables.yaml`) sur un serveur au réglage par défaut trop bas |
 
 ### Mot de passe
 

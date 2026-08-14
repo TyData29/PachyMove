@@ -157,6 +157,19 @@ queries:
     enabled: true
     tags: [qualite]
 
+  - id: biggest_tables
+    title: "Classement des 25 plus grosses tables (par taille, MB)"
+    description: >
+      Les plus grosses tables conditionnent la durée de dump/restore et de
+      reconstruction des index lors d'une migration — à surveiller en
+      priorité pour dimensionner la fenêtre de bascule. n_live_tup affiché
+      à titre indicatif seulement (estimation du collecteur de stats, pas
+      un COUNT(*) réel).
+    file: database/biggest_tables.sql
+    scope: database
+    enabled: true
+    tags: [qualite, info]
+
   - id: most_accessed_tables
     title: "Classement des tables les plus accédées (top 20)"
     description: >

@@ -209,6 +209,7 @@ def collect(
     target_maintenance_db: Optional[str] = None,
     target_dbnames: Optional[list[str]] = None,
     migration_method: Optional[str] = None,
+    work_mem: Optional[str] = None,
 ) -> Path:
     # Une cible n'existe que si elle a été explicitement demandée (aucun flag
     # --target-* ne doit en créer une par héritage silencieux).
@@ -297,7 +298,9 @@ def collect(
         need_source_conn = bool(instance_specs_source) or target_defined
         if need_source_conn:
             try:
-                with open_connection(host, port, user, maintenance_db, service, password) as conn:
+                with open_connection(
+                    host, port, user, maintenance_db, service, password, work_mem,
+                ) as conn:
                     server_version = get_server_version(conn)
                     server_version_num = get_server_version_num(conn)
                     source_info = (conn.info.host, conn.info.port)
@@ -317,7 +320,7 @@ def collect(
             try:
                 with open_connection(
                     target_host, target_port, target_user, target_maintenance_db,
-                    target_service, target_password,
+                    target_service, target_password, work_mem,
                 ) as tconn:
                     target_server_version = get_server_version(tconn)
                     target_server_version_num = get_server_version_num(tconn)
@@ -359,7 +362,9 @@ def collect(
             src_specs = [s for s in db_specs if s.side in ("source", "both")]
             if src_specs:
                 try:
-                    with open_connection(host, port, user, dbname, service, password) as conn:
+                    with open_connection(
+                        host, port, user, dbname, service, password, work_mem,
+                    ) as conn:
                         if server_version is None:
                             server_version = get_server_version(conn)
                         if server_version_num is None:
@@ -391,7 +396,7 @@ def collect(
                     try:
                         with open_connection(
                             target_host, target_port, target_user, dbname,
-                            target_service, target_password,
+                            target_service, target_password, work_mem,
                         ) as tconn:
                             if target_server_version is None:
                                 target_server_version = get_server_version(tconn)
@@ -450,7 +455,7 @@ def collect(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     ts = started_at.strftime("%Y%m%d_%H%M%S")
-    output_file = output_dir / f"audit_{ts}.json"
+    output_file = output_dir / f"audit_{manifest_path.stem}_{ts}.json"
 
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(

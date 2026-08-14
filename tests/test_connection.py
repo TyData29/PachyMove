@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import psycopg
 import pytest
 
-from pgaudit_runner.connection import get_server_version_num, resolve_password
+from pgaudit_runner.connection import get_server_version_num, open_connection, resolve_password
 
 
 @pytest.fixture(autouse=True)
@@ -66,3 +66,34 @@ def test_get_server_version_num_defaults_to_zero_without_row():
     conn.execute.return_value.fetchone.return_value = None
 
     assert get_server_version_num(conn) == 0
+
+
+def test_open_connection_passes_keepalive_params():
+    with patch("psycopg.connect", return_value=MagicMock()) as mock_connect:
+        with open_connection("h", 5432, "u", "d"):
+            pass
+
+    kwargs = mock_connect.call_args.kwargs
+    assert kwargs["keepalives"] == 1
+    assert kwargs["keepalives_idle"] == 30
+    assert kwargs["keepalives_interval"] == 10
+    assert kwargs["keepalives_count"] == 3
+
+
+def test_open_connection_sets_work_mem_when_provided():
+    mock_conn = MagicMock()
+    with patch("psycopg.connect", return_value=mock_conn):
+        with open_connection("h", 5432, "u", "d", work_mem="256MB"):
+            pass
+
+    executed_sql = mock_conn.execute.call_args[0][0]
+    assert executed_sql.as_string(None) == "SET work_mem = '256MB'"
+
+
+def test_open_connection_skips_work_mem_when_not_provided():
+    mock_conn = MagicMock()
+    with patch("psycopg.connect", return_value=mock_conn):
+        with open_connection("h", 5432, "u", "d"):
+            pass
+
+    mock_conn.execute.assert_not_called()
