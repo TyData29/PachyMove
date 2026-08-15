@@ -66,6 +66,8 @@ pgaudit-runner collect `
 
 Produit : `output/audit_<manifeste>_<YYYYMMDD>_<HHMMSS>.json` **et** `output/rapport_<manifeste>_<YYYYMMDD>_<HHMMSS>.md` (le rapport Markdown est généré automatiquement après la collecte — `--no-with-report` pour ne produire que le JSON). `<manifeste>` est le nom de fichier du manifeste sans extension (ex. `pg14_to_pg18`), utile pour distinguer les runs quand plusieurs manifestes sont lancés dans le même dossier `output/`.
 
+`--manifest` accepte aussi un dossier : `--manifest manifests/` exécute tous les `.yaml` qu'il contient à la suite (un couple audit/rapport par manifeste), avec les mêmes `--host`/`--dbnames`/etc. pour tous.
+
 ### 2. Régénérer le rapport (sans connexion, depuis un JSON existant)
 
 Utile pour reproduire un rapport après coup (autre troncature `--max-rows`, JSON archivé d'un run précédent) :
@@ -88,6 +90,16 @@ pgaudit-runner html `
 
 Produit un fichier HTML autonome (CSS intégrée, aucune dépendance externe, aucun binaire à installer). Pour un PDF, ouvrir le fichier dans un navigateur et imprimer (Ctrl+P → Enregistrer en PDF).
 
+### 4. Tableau de bord (agrège plusieurs runs)
+
+Page HTML unique qui recense les bloquants/points de vigilance et les erreurs de collecte de **tous** les `audit_*.json` d'un dossier (plusieurs manifestes, plusieurs dates), avec un lien vers le rapport HTML complet de chaque run — celui-ci est régénéré à chaque appel :
+
+```powershell
+pgaudit-runner dashboard --input-dir output/
+```
+
+Produit `output/index.html` (nom personnalisable via `--output`, mais il doit rester dans `--input-dir` : les liens vers les rapports sont relatifs). Tant qu'aucune requête des manifestes n'expose `severite`/`constat` ou `expect_rows` (cf. Verdicts et synthèse, non calibré à ce jour), la section Bloquants affiche une note explicite plutôt qu'un tableau vide silencieux — la section Erreurs de collecte, elle, reflète toujours l'état réel.
+
 ### Options utiles de `collect`
 
 | Option | Description |
@@ -103,6 +115,7 @@ Produit un fichier HTML autonome (CSS intégrée, aucune dépendance externe, au
 | `--no-with-report` | Ne produit que le JSON, sans générer le rapport Markdown automatiquement |
 | `--max-rows 200` | Seuil de troncature du rapport auto-généré (défaut : 100) |
 | `--work-mem 256MB` | `SET work_mem` en début de session — utile pour les scans lourds (`data_quality_on_tables.yaml`) sur un serveur au réglage par défaut trop bas |
+| `--quiet` | Supprime la progression en direct (`[12/30] id (base, source)... -> success`), affichée par défaut — utile en usage scripté |
 
 ### Mot de passe
 
