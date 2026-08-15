@@ -246,8 +246,14 @@ def dashboard_cmd(input_dir: Path, output_file: Optional[Path], max_rows: int) -
 
         dashboard_html = generate_dashboard(json_paths)
         out = output_file or (input_dir / "index.html")
-        out.write_text(dashboard_html, encoding="utf-8")
-        click.echo(f"Tableau de bord généré : {out}")
+        if not out.is_absolute():
+            out = input_dir / out
+        input_dir_resolved = input_dir.resolve()
+        out_resolved = out.resolve()
+        if input_dir_resolved not in out_resolved.parents:
+            raise click.ClickException("--output doit rester dans --input-dir (liens relatifs vers les rapports).")
+        out_resolved.write_text(dashboard_html, encoding="utf-8")
+        click.echo(f"Tableau de bord généré : {out_resolved}")
     except click.ClickException:
         raise
     except Exception as exc:
