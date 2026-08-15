@@ -1,6 +1,8 @@
 # PachyMove
 
-Boîte à outils pour préparer une migration PostgreSQL majeure (ex. PG14 → PG18). Un même moteur CLI, `pgaudit-runner`, exécute des modules déclarés en manifeste YAML : chacun trace ses résultats dans un JSON horodaté, puis génère un rapport Markdown. Conçu pour être réutilisable d'une mission à l'autre sans toucher au code Python.
+Boîte à outils pour auditer une base de données PostgreSQL/PostGIS et/ou préparer une migration PostgreSQL majeure (ex. PG14 → PG18). 
+Un même moteur CLI, `pgaudit-runner`, exécute des modules déclarés en manifeste YAML : chacun trace ses résultats dans un JSON horodaté, puis génère un rapport Markdown.
+Conçu pour être facilement adaptable sans toucher au code Python.
 
 ---
 
