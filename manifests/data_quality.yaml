@@ -57,6 +57,19 @@ queries:
     enabled: true
     tags: [postgis]
 
+  - id: unused_indexes
+    title: "Index jamais utilisés (idx_scan = 0)"
+    description: >
+      Un index jamais scanné coûte en écriture/maintenance sans bénéfice de
+      lecture mesuré — candidat à la suppression, à confirmer sur une
+      fenêtre d'observation représentative (ces compteurs sont remis à zéro
+      au redémarrage). Généralise geometry_no_spatial_index (absence
+      d'index) au cas symétrique : l'index existe mais ne sert à rien.
+    file: database/unused_indexes.sql
+    scope: database
+    enabled: true
+    tags: [qualite, performance]
+
   - id: tables_without_pk
     title: "Tables sans clé primaire"
     description: >
@@ -143,6 +156,19 @@ queries:
     scope: database
     enabled: true
     tags: [qualite]
+
+  - id: biggest_tables
+    title: "Classement des 25 plus grosses tables (par taille, MB)"
+    description: >
+      Les plus grosses tables conditionnent la durée de dump/restore et de
+      reconstruction des index lors d'une migration — à surveiller en
+      priorité pour dimensionner la fenêtre de bascule. n_live_tup affiché
+      à titre indicatif seulement (estimation du collecteur de stats, pas
+      un COUNT(*) réel).
+    file: database/biggest_tables.sql
+    scope: database
+    enabled: true
+    tags: [qualite, info]
 
   - id: most_accessed_tables
     title: "Classement des tables les plus accédées (top 20)"

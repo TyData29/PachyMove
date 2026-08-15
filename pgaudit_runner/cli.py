@@ -53,6 +53,11 @@ def cli():
     type=click.Choice(["pg_upgrade", "dump_restore"]),
     help="Force l'interprétation de la méthode de migration en cas d'ambiguïté (même serveur)",
 )
+@click.option(
+    "--work-mem", default=None,
+    help="SET work_mem en début de session (ex. 256MB) — utile pour les scans lourds "
+         "(data_quality_on_tables) sur un serveur au réglage par défaut trop bas",
+)
 @click.option("--dry-run", is_flag=True, help="Simule sans connexion réelle")
 @click.option(
     "--with-report/--no-with-report", default=True, show_default=True,
@@ -85,6 +90,7 @@ def collect_cmd(
     dry_run: bool,
     with_report: bool,
     max_rows: int,
+    work_mem: Optional[str],
 ) -> None:
     """Exécute les requêtes d'audit et produit un JSON horodaté."""
     if not dry_run and (not host or not user):
@@ -130,6 +136,7 @@ def collect_cmd(
             target_maintenance_db=(target_maintenance_db or maintenance_db) if target_defined else None,
             target_dbnames=(_csv(target_dbnames) if target_dbnames else _csv(dbnames)) if target_defined else None,
             migration_method=migration_method,
+            work_mem=work_mem,
         )
         click.echo(f"Audit sauvegardé : {output_file}")
 

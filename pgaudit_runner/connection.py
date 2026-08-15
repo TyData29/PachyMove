@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from typing import Generator, Optional
 
 import psycopg
+from psycopg import sql as pgsql
 
 
 def resolve_password(
@@ -50,8 +51,17 @@ def open_connection(
     dbname: str,
     service: Optional[str] = None,
     password: Optional[str] = None,
+    work_mem: Optional[str] = None,
 ) -> Generator[psycopg.Connection, None, None]:
-    params: dict = dict(host=host, port=port, user=user, dbname=dbname, connect_timeout=10)
+    # Keepalives : un scan long (ex. iterate_over sur beaucoup de tables) est
+    # peu bavard sur le fil pendant le calcul côté serveur — un VPN/pare-feu
+    # d'entreprise peut couper silencieusement une connexion TCP dans cet état
+    # même si elle est toujours active côté application. Valeurs prudentes
+    # (probe dès 30s d'inactivité réseau) plutôt que le défaut OS (souvent 2h).
+    params: dict = dict(
+        host=host, port=port, user=user, dbname=dbname, connect_timeout=10,
+        keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
+    )
     if service:
         params["service"] = service
     if password:
@@ -59,6 +69,8 @@ def open_connection(
 
     conn = psycopg.connect(**params, autocommit=True)
     try:
+        if work_mem:
+            conn.execute(pgsql.SQL("SET work_mem = {}").format(pgsql.Literal(work_mem)))
         yield conn
     finally:
         conn.close()
