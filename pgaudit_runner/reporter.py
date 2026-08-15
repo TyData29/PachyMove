@@ -17,6 +17,13 @@ def _badge(status: str) -> str:
     return _BADGES.get(status, "❓")
 
 
+def report_stem(audit_json_path: Path) -> str:
+    """`audit_<manifeste>_<horodatage>` -> `rapport_<manifeste>_<horodatage>`
+    — convention partagée entre `cli.py` (nom du .md) et le dashboard (lien
+    vers le .html), pour ne jamais la dupliquer/désynchroniser."""
+    return audit_json_path.stem.replace("audit_", "rapport_", 1)
+
+
 def _normalize_severity(value: object) -> str:
     v = str(value or "").strip().lower()
     return v if v in _VALID_SEVERITIES else "info"
@@ -421,5 +428,152 @@ def render_html(markdown_text: str, title: str = "Rapport de pré-audit PostgreS
         "<!DOCTYPE html>\n"
         '<html lang="fr">\n<head>\n<meta charset="utf-8">\n'
         f"<title>{safe_title}</title>\n<style>{_HTML_CSS}</style>\n</head>\n<body>\n"
+        f"{body}\n</body>\n</html>\n"
+    )
+
+
+def _e(value: object) -> str:
+    return _html.escape(str(value), quote=True)
+
+
+def _dashboard_table(headers: list[str], rows: list[list[str]]) -> str:
+    """`rows` contient du HTML déjà échappé/construit (liens compris) —
+    l'appelant est responsable de l'échappement, cette fonction ne fait que
+    poser la structure <table>."""
+    head = "".join(f"<th>{h}</th>" for h in headers)
+    body = "".join(
+        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
+    )
+    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def generate_dashboard(json_paths: list[Path]) -> str:
+    """Page HTML autonome agrégeant plusieurs runs `collect` — bloquants et
+    points de vigilance (`extraire_synthese`), erreurs de collecte, liste des
+    runs avec lien vers leur rapport HTML complet (déjà généré séparément,
+    nommé selon `report_stem`).
+
+    Un run dont le mécanisme severite/expect_rows n'est engagé sur aucune
+    requête ne doit jamais se traduire par un tableau vide silencieux (même
+    discipline que `_synthese_engagee` au niveau d'un rapport) : si AUCUN des
+    runs fournis n'a de contrôle calibré, un message explicite remplace les
+    tableaux Bloquants/Vigilance plutôt que de laisser croire à un "tout va
+    bien" qui n'a pas été mesuré.
+    """
+    runs: list[dict] = []
+    bloquants: list[dict] = []
+    vigilances: list[dict] = []
+    erreurs: list[dict] = []
+    une_calibration_existe = False
+
+    for path in json_paths:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        metadata = data.get("metadata") or {}
+        results = data.get("results") or []
+        report_html = f"{report_stem(path)}.html"
+        manifest_name = metadata.get("manifest_name") or path.stem
+        summary = metadata.get("summary") or {}
+
+        runs.append({
+            "manifest_name": manifest_name,
+            "started_at": metadata.get("started_at") or "",
+            "host": (metadata.get("source") or {}).get("host") or "?",
+            "summary": summary,
+            "report_html": report_html,
+        })
+
+        if _synthese_engagee(results):
+            une_calibration_existe = True
+            for e in extraire_synthese(
+                results, metadata.get("same_server"), metadata.get("migration_method"),
+            ):
+                e = {**e, "run": manifest_name, "report_html": report_html}
+                if e["severite"] == "bloquant":
+                    bloquants.append(e)
+                elif e["severite"] == "vigilance":
+                    vigilances.append(e)
+
+        for r in results:
+            if r.get("status") == "error":
+                message = ((r.get("error") or {}).get("message") or "").splitlines()[:1]
+                erreurs.append({
+                    "run": manifest_name,
+                    "report_html": report_html,
+                    "id": r["id"],
+                    "base": r.get("target", "—"),
+                    "message": message[0] if message else "(sans message)",
+                    "ancre": r["id"].replace("_", "-"),
+                })
+
+    runs.sort(key=lambda r: r["started_at"], reverse=True)
+
+    def _constat_rows(entries: list[dict]) -> list[list[str]]:
+        return [
+            [_e(e["run"]), _e(e["base"]),
+             f'<a href="{_e(e["report_html"])}#{_e(e["ancre"])}">{_e(e["id"])}</a>',
+             _e(e["constat"])]
+            for e in entries
+        ]
+
+    parts: list[str] = [
+        "<h1>Tableau de bord — PachyMove</h1>",
+        f"<p>{len(runs)} run(s) analysé(s).</p>",
+        "<h2>Bloquants</h2>",
+    ]
+    if not une_calibration_existe:
+        parts.append(
+            "<blockquote>Aucun contrôle n'expose encore severite/constat ni "
+            "expect_rows sur les runs analysés — rien n'est mesuré, ce n'est "
+            "pas un «tout va bien». Voir la section Erreurs ci-dessous pour "
+            "ce qui est déjà détectable.</blockquote>"
+        )
+    elif not bloquants:
+        parts.append("<p><em>Aucun bloquant détecté sur les runs analysés.</em></p>")
+    else:
+        parts.append(_dashboard_table(["Run", "Base", "Contrôle", "Constat"], _constat_rows(bloquants)))
+
+    parts.append("<h2>Points de vigilance</h2>")
+    if une_calibration_existe:
+        if vigilances:
+            parts.append(_dashboard_table(["Run", "Base", "Contrôle", "Constat"], _constat_rows(vigilances)))
+        else:
+            parts.append("<p><em>Aucun point de vigilance détecté sur les runs analysés.</em></p>")
+    else:
+        parts.append("<p><em>Voir la note ci-dessus — rien n'est calibré pour l'instant.</em></p>")
+
+    parts.append("<h2>Erreurs de collecte</h2>")
+    if erreurs:
+        parts.append(_dashboard_table(
+            ["Run", "Base", "Contrôle", "Message"],
+            [
+                [_e(e["run"]), _e(e["base"]),
+                 f'<a href="{_e(e["report_html"])}#{_e(e["ancre"])}">{_e(e["id"])}</a>',
+                 _e(e["message"])]
+                for e in erreurs
+            ],
+        ))
+    else:
+        parts.append("<p><em>Aucune erreur de collecte sur les runs analysés.</em></p>")
+
+    parts.append("<h2>Runs</h2>")
+    parts.append(_dashboard_table(
+        ["Manifeste", "Date", "Hôte", "Résumé", "Rapport"],
+        [
+            [
+                _e(r["manifest_name"]), _e(r["started_at"]), _e(r["host"]),
+                _e(f"{r['summary'].get('success', 0)} ✅ · "
+                   f"{r['summary'].get('skipped', 0)} ⏭️ · "
+                   f"{r['summary'].get('error', 0)} ❌"),
+                f'<a href="{_e(r["report_html"])}">rapport</a>',
+            ]
+            for r in runs
+        ],
+    ))
+
+    body = "\n".join(parts)
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="fr">\n<head>\n<meta charset="utf-8">\n'
+        f"<title>Tableau de bord PachyMove</title>\n<style>{_HTML_CSS}</style>\n</head>\n<body>\n"
         f"{body}\n</body>\n</html>\n"
     )

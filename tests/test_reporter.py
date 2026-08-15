@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pgaudit_runner.reporter import extraire_synthese, generate_report, render_html
+from pgaudit_runner.reporter import (
+    extraire_synthese,
+    generate_dashboard,
+    generate_report,
+    render_html,
+    report_stem,
+)
 
 
 def _audit_json(tmp_path: Path, results: list[dict], **meta_overrides) -> Path:
@@ -389,3 +395,82 @@ def test_report_renders_multiline_description_with_quote_prefix_on_each_line(tmp
 
     assert "> Ligne un." in report
     assert "> Ligne deux." in report
+
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+
+
+def _write_audit(tmp_path: Path, filename: str, results: list[dict], **meta_overrides) -> Path:
+    metadata = {
+        "manifest_name": meta_overrides.pop("manifest_name", "Test"),
+        "started_at": meta_overrides.pop("started_at", "2026-01-01T10:00:00+00:00"),
+        "source": {"host": meta_overrides.pop("host", "srv")},
+        "summary": {
+            "total": len(results),
+            "success": sum(1 for r in results if r["status"] == "success"),
+            "skipped": sum(1 for r in results if r["status"] == "skipped"),
+            "error": sum(1 for r in results if r["status"] == "error"),
+        },
+    }
+    metadata.update(meta_overrides)
+    path = tmp_path / filename
+    path.write_text(json.dumps({"metadata": metadata, "results": results}), encoding="utf-8")
+    return path
+
+
+def test_report_stem_replaces_audit_prefix():
+    assert report_stem(Path("audit_data_quality_20260815_090000.json")) == "rapport_data_quality_20260815_090000"
+
+
+def test_dashboard_no_calibration_shows_explicit_note_not_empty_table(tmp_path: Path):
+    audit = _write_audit(tmp_path, "audit_m_1.json", [_result()])
+
+    html = generate_dashboard([audit])
+
+    assert "Aucun contrôle n&#x27;expose encore" in html or "n'expose encore" in html
+    assert "<table>" not in html.split("<h2>Points de vigilance</h2>")[0].split("<h2>Bloquants</h2>")[1]
+
+
+def test_dashboard_aggregates_bloquant_with_link_to_report(tmp_path: Path):
+    audit = _write_audit(tmp_path, "audit_m_1.json", [
+        _result(id="q1", columns=["severite", "constat"],
+                rows=[{"severite": "bloquant", "constat": "Casse tout"}], row_count=1),
+    ])
+
+    html = generate_dashboard([audit])
+
+    assert "Casse tout" in html
+    assert 'href="rapport_m_1.html#q1"' in html
+
+
+def test_dashboard_aggregates_collection_errors_across_runs(tmp_path: Path):
+    audit = _write_audit(tmp_path, "audit_m_1.json", [
+        _result(id="q_err", status="error", error={"message": "the connection is closed"}),
+    ])
+
+    html = generate_dashboard([audit])
+
+    assert "the connection is closed" in html
+    assert 'href="rapport_m_1.html#q-err"' in html
+
+
+def test_dashboard_runs_table_sorted_most_recent_first(tmp_path: Path):
+    older = _write_audit(tmp_path, "audit_a_1.json", [_result()], started_at="2026-01-01T00:00:00+00:00")
+    newer = _write_audit(tmp_path, "audit_b_1.json", [_result()], started_at="2026-06-01T00:00:00+00:00")
+
+    html = generate_dashboard([older, newer])
+
+    runs_section = html.split("<h2>Runs</h2>")[1]
+    assert runs_section.index("2026-06-01") < runs_section.index("2026-01-01")
+
+
+def test_dashboard_escapes_html_in_constat(tmp_path: Path):
+    audit = _write_audit(tmp_path, "audit_m_1.json", [
+        _result(id="q1", columns=["severite", "constat"],
+                rows=[{"severite": "bloquant", "constat": "<script>alert(1)</script>"}], row_count=1),
+    ])
+
+    html = generate_dashboard([audit])
+
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;" in html

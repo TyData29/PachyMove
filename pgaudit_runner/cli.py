@@ -9,7 +9,7 @@ import click
 
 from .collector import collect
 from .log_analyzer import analyze_directory
-from .reporter import generate_report, render_html
+from .reporter import generate_dashboard, generate_report, render_html, report_stem
 
 
 def _csv(value: str) -> list[str]:
@@ -32,7 +32,8 @@ def cli():
 )
 @click.option(
     "--manifest", required=True, type=click.Path(exists=True, path_type=Path),
-    help="Chemin du manifeste YAML",
+    help="Chemin d'un manifeste YAML, ou d'un dossier pour tous les lancer à la suite "
+         "(ex. --manifest manifests/)",
 )
 @click.option(
     "--output", default=Path("output"), show_default=True, type=click.Path(path_type=Path),
@@ -57,6 +58,10 @@ def cli():
     "--work-mem", default=None,
     help="SET work_mem en début de session (ex. 256MB) — utile pour les scans lourds "
          "(data_quality_on_tables) sur un serveur au réglage par défaut trop bas",
+)
+@click.option(
+    "--quiet", is_flag=True,
+    help="Supprime la progression en direct (utile en usage scripté)",
 )
 @click.option("--dry-run", is_flag=True, help="Simule sans connexion réelle")
 @click.option(
@@ -91,6 +96,7 @@ def collect_cmd(
     with_report: bool,
     max_rows: int,
     work_mem: Optional[str],
+    quiet: bool,
 ) -> None:
     """Exécute les requêtes d'audit et produit un JSON horodaté."""
     if not dry_run and (not host or not user):
@@ -101,9 +107,14 @@ def collect_cmd(
     host = host or "(dry-run)"
     user = user or "(dry-run)"
 
-    queries_dir = manifest.parent.parent / "queries"
+    manifests_dir = manifest if manifest.is_dir() else manifest.parent
+    queries_dir = manifests_dir.parent / "queries"
     if not queries_dir.exists():
         raise click.ClickException(f"Dossier queries introuvable : {queries_dir}")
+
+    manifest_paths = sorted(manifest.glob("*.yaml")) if manifest.is_dir() else [manifest]
+    if not manifest_paths:
+        raise click.ClickException(f"Aucun manifeste .yaml trouvé dans {manifest}")
 
     # Une cible n'existe que si au moins un --target-* a été passé explicitement
     # (tous par défaut None) — l'héritage ci-dessous ne doit jamais en créer une
@@ -114,41 +125,43 @@ def collect_cmd(
                   target_maintenance_db, target_dbnames)
     )
 
-    try:
-        output_file = collect(
-            host=host,
-            port=port,
-            user=user,
-            dbnames=_csv(dbnames),
-            maintenance_db=maintenance_db,
-            manifest_path=manifest,
-            queries_dir=queries_dir,
-            output_dir=output,
-            tags=_csv(tags),
-            only=_csv(only),
-            exclude=_csv(exclude),
-            dry_run=dry_run,
-            service=service,
-            target_host=(target_host or host) if target_defined else None,
-            target_port=(target_port or port) if target_defined else None,
-            target_user=(target_user or user) if target_defined else None,
-            target_service=target_service,
-            target_maintenance_db=(target_maintenance_db or maintenance_db) if target_defined else None,
-            target_dbnames=(_csv(target_dbnames) if target_dbnames else _csv(dbnames)) if target_defined else None,
-            migration_method=migration_method,
-            work_mem=work_mem,
-        )
-        click.echo(f"Audit sauvegardé : {output_file}")
+    for i, manifest_path in enumerate(manifest_paths, start=1):
+        if len(manifest_paths) > 1:
+            click.echo(f"=== Manifeste {i}/{len(manifest_paths)} : {manifest_path.name} ===")
+        try:
+            output_file = collect(
+                host=host,
+                port=port,
+                user=user,
+                dbnames=_csv(dbnames),
+                maintenance_db=maintenance_db,
+                manifest_path=manifest_path,
+                queries_dir=queries_dir,
+                output_dir=output,
+                tags=_csv(tags),
+                only=_csv(only),
+                exclude=_csv(exclude),
+                dry_run=dry_run,
+                service=service,
+                target_host=(target_host or host) if target_defined else None,
+                target_port=(target_port or port) if target_defined else None,
+                target_user=(target_user or user) if target_defined else None,
+                target_service=target_service,
+                target_maintenance_db=(target_maintenance_db or maintenance_db) if target_defined else None,
+                target_dbnames=(_csv(target_dbnames) if target_dbnames else _csv(dbnames)) if target_defined else None,
+                migration_method=migration_method,
+                work_mem=work_mem,
+                quiet=quiet,
+            )
+            click.echo(f"Audit sauvegardé : {output_file}")
 
-        if with_report:
-            report_path = output_file.with_name(
-                output_file.name.replace("audit_", "rapport_", 1)
-            ).with_suffix(".md")
-            md = generate_report(output_file, max_rows=max_rows)
-            report_path.write_text(md, encoding="utf-8")
-            click.echo(f"Rapport généré : {report_path}")
-    except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
+            if with_report:
+                report_path = output_file.with_name(f"{report_stem(output_file)}.md")
+                md = generate_report(output_file, max_rows=max_rows)
+                report_path.write_text(md, encoding="utf-8")
+                click.echo(f"Rapport généré : {report_path}")
+        except Exception as exc:
+            raise click.ClickException(str(exc)) from exc
 
 
 @cli.command(name="report")
@@ -194,6 +207,49 @@ def html_cmd(input_file: Path, output_file: Path) -> None:
         html = render_html(md)
         output_file.write_text(html, encoding="utf-8")
         click.echo(f"HTML généré : {output_file}")
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@cli.command(name="dashboard")
+@click.option(
+    "--input-dir", "input_dir", required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Dossier contenant les JSON d'audit (audit_*.json, ex. output/)",
+)
+@click.option(
+    "--output", "output_file", default=None, type=click.Path(path_type=Path),
+    help="Fichier HTML en sortie (défaut : <input-dir>/index.html) — doit rester "
+         "dans --input-dir, les liens vers les rapports sont relatifs",
+)
+@click.option(
+    "--max-rows", default=100, show_default=True,
+    help="Seuil de troncature des rapports HTML régénérés pour chaque run",
+)
+def dashboard_cmd(input_dir: Path, output_file: Optional[Path], max_rows: int) -> None:
+    """Page HTML agrégeant bloquants/vigilance/erreurs de tous les runs d'un
+    dossier, avec lien vers le rapport HTML complet de chacun (régénéré à
+    chaque appel, pour rester à jour)."""
+    try:
+        json_paths = sorted(input_dir.glob("audit_*.json"))
+        if not json_paths:
+            raise click.ClickException(f"Aucun audit_*.json trouvé dans {input_dir}")
+
+        for path in json_paths:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            manifest_name = (data.get("metadata") or {}).get("manifest_name") or path.stem
+            md = generate_report(path, max_rows=max_rows)
+            stem = report_stem(path)
+            (input_dir / f"{stem}.md").write_text(md, encoding="utf-8")
+            html = render_html(md, title=manifest_name)
+            (input_dir / f"{stem}.html").write_text(html, encoding="utf-8")
+
+        dashboard_html = generate_dashboard(json_paths)
+        out = output_file or (input_dir / "index.html")
+        out.write_text(dashboard_html, encoding="utf-8")
+        click.echo(f"Tableau de bord généré : {out}")
+    except click.ClickException:
+        raise
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 

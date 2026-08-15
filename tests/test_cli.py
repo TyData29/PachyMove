@@ -104,6 +104,53 @@ def test_collect_without_dry_run_and_without_host_user_raises_usage_error(tmp_pa
     assert "--host et --user sont obligatoires" in result.output
 
 
+def test_collect_with_directory_manifest_runs_every_yaml_file(tmp_path: Path):
+    queries_dir = tmp_path / "queries" / "instance"
+    queries_dir.mkdir(parents=True)
+    (queries_dir / "q.sql").write_text("SELECT 1", encoding="utf-8")
+
+    manifests_dir = tmp_path / "manifests"
+    manifests_dir.mkdir()
+    for name in ("a", "b"):
+        (manifests_dir / f"{name}.yaml").write_text(
+            "queries:\n  - id: q\n    title: Q\n    file: instance/q.sql\n    scope: instance\n",
+            encoding="utf-8",
+        )
+
+    runner = CliRunner()
+    with patch("pgaudit_runner.cli.collect") as mock_collect:
+        mock_collect.side_effect = [
+            tmp_path / "out" / "audit_a_1.json", tmp_path / "out" / "audit_b_1.json",
+        ]
+        result = runner.invoke(cli, [
+            "collect", "--host", "h", "--user", "u",
+            "--manifest", str(manifests_dir), "--output", str(tmp_path / "out"),
+            "--dry-run", "--no-with-report",
+        ])
+
+    assert result.exit_code == 0, result.output
+    assert mock_collect.call_count == 2
+    manifest_names = [c.kwargs["manifest_path"].name for c in mock_collect.call_args_list]
+    assert manifest_names == ["a.yaml", "b.yaml"]
+    assert "Manifeste 1/2 : a.yaml" in result.output
+    assert "Manifeste 2/2 : b.yaml" in result.output
+
+
+def test_collect_with_single_file_manifest_has_no_batch_header(tmp_path: Path):
+    manifest = _manifest(tmp_path)
+    runner = CliRunner()
+
+    with patch("pgaudit_runner.cli.collect", return_value=tmp_path / "out.json"):
+        result = runner.invoke(cli, [
+            "collect", "--host", "h", "--user", "u",
+            "--manifest", str(manifest), "--output", str(tmp_path / "out"),
+            "--dry-run", "--no-with-report",
+        ])
+
+    assert result.exit_code == 0, result.output
+    assert "Manifeste" not in result.output
+
+
 def test_migration_method_rejects_invalid_choice(tmp_path: Path):
     manifest = _manifest(tmp_path)
     runner = CliRunner()
@@ -164,6 +211,46 @@ def test_html_command_converts_markdown_file(tmp_path: Path):
     html = html_file.read_text(encoding="utf-8")
     assert html.startswith("<!DOCTYPE html>")
     assert "<table>" in html
+
+
+def test_dashboard_command_generates_index_and_run_reports(tmp_path: Path):
+    input_dir = tmp_path / "output"
+    input_dir.mkdir()
+    audit = input_dir / "audit_m_20260815_090000.json"
+    audit.write_text(json.dumps({
+        "metadata": {
+            "manifest_name": "Test", "started_at": "2026-08-15T09:00:00+00:00",
+            "source": {"host": "srv"},
+            "summary": {"total": 1, "success": 1, "skipped": 0, "error": 0},
+        },
+        "results": [{
+            "id": "q1", "title": "Q1", "scope": "database", "target": "db1",
+            "sql": "SELECT 1", "status": "success", "requires_superuser": False,
+            "columns": ["n"], "rows": [{"n": 1}], "row_count": 1, "error": None,
+            "skip_reason": None, "expect_rows": None, "severity_if_unexpected": "vigilance",
+        }],
+    }), encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["dashboard", "--input-dir", str(input_dir)])
+
+    assert result.exit_code == 0, result.output
+    index_file = input_dir / "index.html"
+    assert index_file.exists()
+    assert "Tableau de bord" in index_file.read_text(encoding="utf-8")
+    assert (input_dir / "rapport_m_20260815_090000.html").exists()
+    assert (input_dir / "rapport_m_20260815_090000.md").exists()
+
+
+def test_dashboard_command_no_json_raises(tmp_path: Path):
+    input_dir = tmp_path / "output"
+    input_dir.mkdir()
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["dashboard", "--input-dir", str(input_dir)])
+
+    assert result.exit_code != 0
+    assert "Aucun audit_*.json" in result.output
 
 
 def test_analyze_logs_command_writes_json_summary(tmp_path: Path):

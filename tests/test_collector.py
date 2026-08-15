@@ -177,6 +177,40 @@ def test_side_both_produces_source_and_target_success(tmp_path: Path):
     assert data["metadata"]["same_server"] is False
 
 
+def test_collect_prints_progress_by_default(tmp_path: Path, capsys):
+    manifest = _simple_manifest(tmp_path, """
+  - id: q
+    title: Q
+    file: instance/q.sql
+    scope: instance
+""")
+    with patch("pgaudit_runner.collector.resolve_password", return_value=None), \
+         patch("pgaudit_runner.collector.get_server_version", return_value="PG 17"), \
+         patch("pgaudit_runner.collector.open_connection") as mock_open:
+        mock_open.side_effect = lambda host, *a, **kw: _cm(_fake_conn(host))
+        collect(**_base_kwargs(tmp_path, manifest))
+
+    out = capsys.readouterr().out
+    assert "[1/1] q (instance, source)..." in out
+    assert "-> success" in out
+
+
+def test_collect_quiet_suppresses_progress(tmp_path: Path, capsys):
+    manifest = _simple_manifest(tmp_path, """
+  - id: q
+    title: Q
+    file: instance/q.sql
+    scope: instance
+""")
+    with patch("pgaudit_runner.collector.resolve_password", return_value=None), \
+         patch("pgaudit_runner.collector.get_server_version", return_value="PG 17"), \
+         patch("pgaudit_runner.collector.open_connection") as mock_open:
+        mock_open.side_effect = lambda host, *a, **kw: _cm(_fake_conn(host))
+        collect(**_base_kwargs(tmp_path, manifest, quiet=True))
+
+    assert capsys.readouterr().out == ""
+
+
 def test_target_connection_failure_marks_all_target_results_error(tmp_path: Path):
     manifest = _simple_manifest(tmp_path, """
   - id: q_instance

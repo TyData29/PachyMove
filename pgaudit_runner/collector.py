@@ -210,6 +210,7 @@ def collect(
     target_dbnames: Optional[list[str]] = None,
     migration_method: Optional[str] = None,
     work_mem: Optional[str] = None,
+    quiet: bool = False,
 ) -> Path:
     # Une cible n'existe que si elle a été explicitement demandée (aucun flag
     # --target-* ne doit en créer une par héritage silencieux).
@@ -268,6 +269,35 @@ def collect(
         s for s in selected if s.scope == "instance" and s.side in ("target", "both")
     ]
     db_specs = [s for s in selected if s.scope == "database"]
+    src_db_specs = [s for s in db_specs if s.side in ("source", "both")]
+    tgt_db_specs = [s for s in db_specs if s.side in ("target", "both")]
+
+    # Estimation grossière (majorant) affichée en préfixe de la progression :
+    # ne tient pas compte des skips (base absente côté cible, cible
+    # injoignable...), connus seulement une fois la connexion établie.
+    total_estimate = (
+        len(instance_specs_source)
+        + (len(instance_specs_target) if target_defined else 0)
+        + len(dbnames) * len(src_db_specs)
+        + (len(target_databases_targeted or dbnames) * len(tgt_db_specs) if target_defined else 0)
+    )
+    done = 0
+
+    def _log(msg: str) -> None:
+        if not quiet:
+            print(msg, flush=True)
+
+    def _run_spec_logged(
+        conn: psycopg.Connection, spec: QuerySpec, target: str, side: str,
+        version_num: Optional[int],
+    ) -> QueryResult:
+        nonlocal done
+        done += 1
+        _log(f"[{done}/{total_estimate}] {spec.id} ({target}, {side})...")
+        result = _run_spec(conn, spec, target, read_only, side, version_num)
+        suffix = f" ({result.duration_ms} ms)" if result.duration_ms else ""
+        _log(f"    -> {result.status}{suffix}")
+        return result
 
     if dry_run:
         for spec in selected:
@@ -305,9 +335,8 @@ def collect(
                     server_version_num = get_server_version_num(conn)
                     source_info = (conn.info.host, conn.info.port)
                     for spec in instance_specs_source:
-                        results.append(_run_spec(
-                            conn, spec, "instance", read_only, "source",
-                            server_version_num,
+                        results.append(_run_spec_logged(
+                            conn, spec, "instance", "source", server_version_num,
                         ))
             except psycopg.OperationalError as exc:
                 for spec in instance_specs_source:
@@ -344,9 +373,8 @@ def collect(
                         row[0] for row in tconn.execute("SELECT datname FROM pg_database").fetchall()
                     }
                     for spec in instance_specs_target:
-                        results.append(_run_spec(
-                            tconn, spec, "instance", read_only, "target",
-                            target_server_version_num,
+                        results.append(_run_spec_logged(
+                            tconn, spec, "instance", "target", target_server_version_num,
                         ))
             except psycopg.OperationalError as exc:
                 target_error = str(exc).splitlines()[0]
@@ -359,7 +387,7 @@ def collect(
                 results.append(_skip_result(spec, "instance", "target", "aucune cible définie"))
 
         for dbname in dbnames:
-            src_specs = [s for s in db_specs if s.side in ("source", "both")]
+            src_specs = src_db_specs
             if src_specs:
                 try:
                     with open_connection(
@@ -370,15 +398,14 @@ def collect(
                         if server_version_num is None:
                             server_version_num = get_server_version_num(conn)
                         for spec in src_specs:
-                            results.append(_run_spec(
-                                conn, spec, dbname, read_only, "source",
-                                server_version_num,
+                            results.append(_run_spec_logged(
+                                conn, spec, dbname, "source", server_version_num,
                             ))
                 except psycopg.OperationalError as exc:
                     for spec in src_specs:
                         results.append(_conn_error_result(spec, dbname, exc, side="source"))
 
-        tgt_specs = [s for s in db_specs if s.side in ("target", "both")]
+        tgt_specs = tgt_db_specs
         if tgt_specs:
             for dbname in (target_databases_targeted or dbnames):
                 if not target_defined:
@@ -403,9 +430,8 @@ def collect(
                             if target_server_version_num is None:
                                 target_server_version_num = get_server_version_num(tconn)
                             for spec in tgt_specs:
-                                results.append(_run_spec(
-                                    tconn, spec, dbname, read_only, "target",
-                                    target_server_version_num,
+                                results.append(_run_spec_logged(
+                                    tconn, spec, dbname, "target", target_server_version_num,
                                 ))
                     except psycopg.OperationalError as exc:
                         for spec in tgt_specs:
