@@ -32,7 +32,6 @@ FROM pg_stat_user_indexes s
 JOIN pg_class i          ON i.oid = s.indexrelid
 JOIN pg_class t          ON t.oid = s.relid
 JOIN pg_namespace n      ON n.oid = t.relnamespace
-JOIN pg_index ix         ON ix.indexrelid = i.oid
 JOIN pg_am am             ON am.oid = i.relam
 JOIN pg_stat_user_tables ts ON ts.relid = t.oid
 WHERE s.idx_scan = 0
