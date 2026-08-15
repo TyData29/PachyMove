@@ -14,8 +14,8 @@ JOIN pg_class i     ON i.oid = x.indexrelid
 JOIN pg_class t     ON t.oid = x.indrelid
 JOIN pg_namespace n ON n.oid = t.relnamespace
 JOIN pg_am am       ON am.oid = i.relam
-CROSS JOIN LATERAL unnest(x.indclass) AS opclass_oid
-JOIN pg_opclass oc  ON oc.oid = opclass_oid
+CROSS JOIN LATERAL unnest(x.indclass) AS u(opclass_oid)
+JOIN pg_opclass oc  ON oc.oid = u.opclass_oid
 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-  AND (oc.opcname = 'tsvector_ops' OR oc.opcname LIKE '%trgm%')
+  AND (oc.opcname LIKE '%tsvector%' OR oc.opcname LIKE '%trgm%')
 ORDER BY 1, 2, 3
