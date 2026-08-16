@@ -246,6 +246,19 @@ def test_run_derived_query_continues_after_per_row_error():
     assert result.row_count == 2
     assert result.rows[0]["erreur"] == "permission denied"
     assert result.rows[1] == {"schema_": "public", "relation": "t2", "nb_lignes": 10}
+    assert result.error_row_count == 1
+
+
+def test_run_derived_query_error_row_count_zero_when_all_succeed():
+    discovery_cur = _cur(["schema_", "relation"], [("public", "t1")])
+    ok_cur = _cur(["nb_lignes"], [(10,)])
+    conn = MagicMock()
+    conn.execute.side_effect = [discovery_cur, ok_cur]
+
+    spec = _derived_spec("SELECT count(*) AS nb_lignes FROM {schema}.{table}", "SELECT ...")
+    result = run_derived_query(conn, spec, target="db1", read_only=True)
+
+    assert result.error_row_count == 0
 
 
 def test_run_derived_query_discovery_failure_returns_error():

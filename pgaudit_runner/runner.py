@@ -358,6 +358,8 @@ def run_derived_query(
             rows.append(ident)
             _ensure_column("erreur")
 
+    error_row_count = sum(1 for r in rows if "erreur" in r)
+
     duration_ms = int((datetime.now(tz=timezone.utc) - started_at).total_seconds() * 1000)
     return QueryResult(
         id=spec.id,
@@ -373,6 +375,7 @@ def run_derived_query(
         columns=columns_order,
         rows=rows,
         row_count=len(rows),
+        error_row_count=error_row_count,
         expect_rows=spec.expect_rows,
         severity_if_unexpected=spec.severity_if_unexpected,
         side=side,

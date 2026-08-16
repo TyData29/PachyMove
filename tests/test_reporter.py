@@ -69,6 +69,35 @@ def test_report_renders_skipped_and_error_sections(tmp_path: Path):
     assert "À relancer avec superuser" in report
 
 
+def test_report_partial_scan_shows_warning_and_points_dattention_entry(tmp_path: Path):
+    audit = _audit_json(tmp_path, [
+        _result(
+            id="low_fill_rate_columns", columns=["schema_", "relation", "erreur"],
+            rows=[{"schema_": "s", "relation": "t", "erreur": "the connection is closed"}],
+            row_count=1, error_row_count=1,
+        ),
+    ])
+
+    report = generate_report(audit)
+
+    assert "1/1 ligne(s) sont des erreurs de collecte" in report
+    assert "### Scans partiels" in report
+    assert "`low_fill_rate_columns`" in report
+
+
+def test_report_old_json_without_error_row_count_shows_no_warning(tmp_path: Path):
+    # Retrocompatibilite : un JSON pre-chantier (champ absent, pas juste None)
+    # ne doit rien afficher de special ni planter.
+    audit = _audit_json(tmp_path, [
+        _result(columns=["n"], rows=[{"n": 1}], row_count=1),
+    ])
+
+    report = generate_report(audit)
+
+    assert "erreurs de collecte" not in report
+    assert "Scans partiels" not in report
+
+
 def test_report_empty_rows_shows_no_result_message(tmp_path: Path):
     audit = _audit_json(tmp_path, [_result(columns=["n"], rows=[], row_count=0)])
 
@@ -452,6 +481,30 @@ def test_dashboard_aggregates_collection_errors_across_runs(tmp_path: Path):
 
     assert "the connection is closed" in html
     assert 'href="rapport_m_1.html#q-err"' in html
+
+
+def test_dashboard_aggregates_partial_scans_across_runs(tmp_path: Path):
+    audit = _write_audit(tmp_path, "audit_m_1.json", [
+        _result(
+            id="low_fill_rate_columns", columns=["schema_", "relation", "erreur"],
+            rows=[{"schema_": "s", "relation": "t", "erreur": "the connection is closed"}],
+            row_count=1, error_row_count=1,
+        ),
+    ])
+
+    html = generate_dashboard([audit])
+
+    assert "Scans partiels" in html
+    assert "1/1" in html
+    assert 'href="rapport_m_1.html#low-fill-rate-columns"' in html
+
+
+def test_dashboard_no_partial_scans_shows_explicit_message(tmp_path: Path):
+    audit = _write_audit(tmp_path, "audit_m_1.json", [_result()])
+
+    html = generate_dashboard([audit])
+
+    assert "Aucun scan dérivé partiellement en erreur" in html
 
 
 def test_dashboard_runs_table_sorted_most_recent_first(tmp_path: Path):
