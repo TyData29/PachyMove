@@ -58,9 +58,19 @@ def open_connection(
     # d'entreprise peut couper silencieusement une connexion TCP dans cet état
     # même si elle est toujours active côté application. Valeurs prudentes
     # (probe dès 30s d'inactivité réseau) plutôt que le défaut OS (souvent 2h).
+    # client_encoding forcé en UTF8 : nos requêtes (queries/*.sql) ont des
+    # commentaires en français, potentiellement accentués. psycopg encode le
+    # texte de la requête envoyée au serveur selon l'encodage négocié de la
+    # connexion — sur une base en SQL_ASCII (ou toute base non-UTF8), il
+    # retombe sur un codec restreint côté client et plante dès qu'un
+    # commentaire contient un caractère accentué (constaté en pratique sur un
+    # serveur PG18 dont la base de maintenance est en SQL_ASCII). Indépendant
+    # de l'encodage réel de la base : client_encoding ne fait que gouverner la
+    # conversion sur le fil, jamais le stockage.
     params: dict = dict(
         host=host, port=port, user=user, dbname=dbname, connect_timeout=10,
         keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
+        options="-c client_encoding=UTF8",
     )
     if service:
         params["service"] = service

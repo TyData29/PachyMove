@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,15 @@ def _csv(value: str) -> list[str]:
 @click.group()
 def cli():
     """pgaudit-runner — Pré-audit PostgreSQL avant migration majeure."""
+    # Certaines consoles Windows exposent un encodage stdout/stderr restreint
+    # (ex. 'ascii'), sans rapport avec l'encodage réel du terminal — tout
+    # message accentué (nos textes FR, ou un message PostgreSQL localisé,
+    # cf. log_analyzer.py) y plante l'outil entier avec une UnicodeEncodeError
+    # au lieu de simplement mal s'afficher. errors="replace" dégrade
+    # proprement (un caractère devient �) plutôt que d'interrompre le run.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 @cli.command(name="collect")

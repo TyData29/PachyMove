@@ -80,6 +80,18 @@ def test_open_connection_passes_keepalive_params():
     assert kwargs["keepalives_count"] == 3
 
 
+def test_open_connection_forces_utf8_client_encoding():
+    # Nos requetes ont des commentaires accentues en francais : sur une base
+    # SQL_ASCII (ou toute base non-UTF8), psycopg encoderait sinon le texte
+    # envoye au serveur avec un codec restreint et planterait des le premier
+    # commentaire accentue (constate en pratique sur un serveur PG18).
+    with patch("psycopg.connect", return_value=MagicMock()) as mock_connect:
+        with open_connection("h", 5432, "u", "d"):
+            pass
+
+    assert mock_connect.call_args.kwargs["options"] == "-c client_encoding=UTF8"
+
+
 def test_open_connection_sets_work_mem_when_provided():
     mock_conn = MagicMock()
     with patch("psycopg.connect", return_value=mock_conn):
