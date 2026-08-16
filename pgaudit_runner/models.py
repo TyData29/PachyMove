@@ -50,6 +50,10 @@ class QueryResult:
     columns: Optional[list[str]] = None
     rows: Optional[list[dict[str, Any]]] = None
     row_count: Optional[int] = None
+    # Requêtes dérivées (iterate_over) uniquement : nb de lignes de `rows` qui
+    # sont en réalité des erreurs par table (clé "erreur"), sans quoi elles se
+    # mélangent silencieusement à row_count — cf. runner.py::run_derived_query
+    error_row_count: Optional[int] = None
     error: Optional[ErrorDetail] = None
     skip_reason: Optional[str] = None
     expect_rows: Optional[int] = None

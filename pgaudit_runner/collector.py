@@ -91,7 +91,10 @@ def _aggregate_deprecated_tables(result: QueryResult) -> QueryResult:
     if any("erreur" in r for r in new_rows):
         columns.append("erreur")
 
-    return replace(result, rows=new_rows, row_count=len(new_rows), columns=columns)
+    return replace(
+        result, rows=new_rows, row_count=len(new_rows), columns=columns,
+        error_row_count=sum(1 for r in new_rows if "erreur" in r),
+    )
 
 
 def _aggregate_true_duplicates(result: QueryResult) -> QueryResult:
@@ -131,7 +134,10 @@ def _aggregate_true_duplicates(result: QueryResult) -> QueryResult:
     if errors:
         columns.append("erreur")
 
-    return replace(result, rows=new_rows, row_count=len(new_rows), columns=columns)
+    return replace(
+        result, rows=new_rows, row_count=len(new_rows), columns=columns,
+        error_row_count=len(errors),
+    )
 
 
 def _select_queries(

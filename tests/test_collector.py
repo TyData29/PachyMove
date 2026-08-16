@@ -376,6 +376,19 @@ def test_aggregate_deprecated_tables_surfaces_error_when_no_signal_at_all():
     result = _aggregate_deprecated_tables(_result(rows))
     assert result.rows[0]["erreur"] == "permission denied"
     assert result.rows[0]["verdict"] is None
+    assert result.error_row_count == 1
+
+
+def test_aggregate_deprecated_tables_error_row_count_recomputed_after_grouping():
+    # error_row_count doit refleter les lignes POST-regroupement (une par
+    # table), pas le nombre de lignes brutes avant agregation (une par colonne).
+    rows = [
+        {"schema_": "public", "relation": "t1", "colonne": "c1", "erreur": "permission denied"},
+        {"schema_": "public", "relation": "t1", "colonne": "c2", "erreur": "permission denied"},
+    ]
+    result = _aggregate_deprecated_tables(_result(rows))
+    assert result.row_count == 1
+    assert result.error_row_count == 1
 
 
 def test_aggregate_true_duplicates_groups_matching_fingerprint_and_row_count():
@@ -389,6 +402,18 @@ def test_aggregate_true_duplicates_groups_matching_fingerprint_and_row_count():
     relations = {r["relation"] for r in result.rows}
     assert relations == {"t1", "t2"}
     assert result.rows[0]["groupe"] == result.rows[1]["groupe"]
+
+
+def test_aggregate_true_duplicates_error_row_count_reflects_kept_errors():
+    rows = [
+        {"schema_": "a", "relation": "t1", "nb_lignes": 100, "empreinte": "hash1"},
+        {"schema_": "b", "relation": "t2", "nb_lignes": 100, "empreinte": "hash1"},
+        {"schema_": "c", "relation": "t3", "erreur": "permission denied"},
+    ]
+    result = _aggregate_true_duplicates(_result(rows))
+
+    assert result.row_count == 3  # 2 doublons + 1 erreur
+    assert result.error_row_count == 1
 
 
 def test_aggregate_true_duplicates_no_match_yields_empty():

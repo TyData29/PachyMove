@@ -184,6 +184,13 @@ def _render_result_body(r: dict, max_rows: int, annotation: Optional[str] = None
         columns = r.get("columns") or []
         rows = r.get("rows") or []
         total = r.get("row_count") or 0
+        error_row_count = r.get("error_row_count") or 0
+        if error_row_count:
+            lines.append(
+                f"⚠️ **{error_row_count}/{total} ligne(s) sont des erreurs de collecte "
+                "par table** (ex. connexion perdue en cours de scan), pas des résultats "
+                "— à interpréter avec prudence, voir la colonne `erreur`.\n"
+            )
         lines.append(_md_table(columns, rows[:max_rows]))
         if total > max_rows:
             lines.append(
@@ -359,8 +366,9 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
         r for r in all_results
         if r["status"] == "skipped" and r.get("requires_superuser")
     ]
+    partial_scans = [r for r in all_results if r.get("error_row_count")]
 
-    if errors or su_skipped:
+    if errors or su_skipped or partial_scans:
         lines.append("## Points d'attention\n")
         if errors:
             lines.append("### Requêtes en erreur\n")
@@ -368,6 +376,15 @@ def generate_report(audit_json: Path, max_rows: int = 100) -> str:
                 err = r.get("error") or {}
                 lines.append(
                     f"- **`{r['id']}`** sur `{r['target']}` : {err.get('message', '?')}"
+                )
+            lines.append("")
+        if partial_scans:
+            lines.append("### Scans partiels (erreurs de collecte par table)\n")
+            for r in partial_scans:
+                total = r.get("row_count") or 0
+                lines.append(
+                    f"- **`{r['id']}`** sur `{r['target']}` : "
+                    f"{r['error_row_count']}/{total} ligne(s) sont des erreurs, pas des résultats"
                 )
             lines.append("")
         if su_skipped:
@@ -464,6 +481,7 @@ def generate_dashboard(json_paths: list[Path]) -> str:
     bloquants: list[dict] = []
     vigilances: list[dict] = []
     erreurs: list[dict] = []
+    scans_partiels: list[dict] = []
     une_calibration_existe = False
 
     for path in json_paths:
@@ -502,6 +520,16 @@ def generate_dashboard(json_paths: list[Path]) -> str:
                     "id": r["id"],
                     "base": r.get("target", "—"),
                     "message": message[0] if message else "(sans message)",
+                    "ancre": r["id"].replace("_", "-"),
+                })
+            if r.get("error_row_count"):
+                scans_partiels.append({
+                    "run": manifest_name,
+                    "report_html": report_html,
+                    "id": r["id"],
+                    "base": r.get("target", "—"),
+                    "error_row_count": r["error_row_count"],
+                    "row_count": r.get("row_count") or 0,
                     "ancre": r["id"].replace("_", "-"),
                 })
 
@@ -554,6 +582,20 @@ def generate_dashboard(json_paths: list[Path]) -> str:
         ))
     else:
         parts.append("<p><em>Aucune erreur de collecte sur les runs analysés.</em></p>")
+
+    parts.append("<h2>Scans partiels (erreurs de collecte par table)</h2>")
+    if scans_partiels:
+        parts.append(_dashboard_table(
+            ["Run", "Base", "Contrôle", "Erreurs / Total"],
+            [
+                [_e(s["run"]), _e(s["base"]),
+                 f'<a href="{_e(s["report_html"])}#{_e(s["ancre"])}">{_e(s["id"])}</a>',
+                 _e(f"{s['error_row_count']}/{s['row_count']}")]
+                for s in scans_partiels
+            ],
+        ))
+    else:
+        parts.append("<p><em>Aucun scan dérivé partiellement en erreur sur les runs analysés.</em></p>")
 
     parts.append("<h2>Runs</h2>")
     parts.append(_dashboard_table(
