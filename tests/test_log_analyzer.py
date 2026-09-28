@@ -170,6 +170,39 @@ def test_analyze_directory_parses_french_locale_messages(tmp_path: Path):
     assert alice["applications"] == {"pgAdmin 4 - DB:mydb": 1}
 
 
+def test_analyze_directory_parses_prefix_with_application_user_database_fields(tmp_path: Path):
+    # CCPI (serveur Linux) : log_line_prefix inclut %a/%u/%d avant [%p], pas
+    # seulement le défaut '%m [%p] '. Ces trois champs valent soit une valeur
+    # réelle, soit le littéral PostgreSQL "[inconnu]" tant qu'ils ne sont pas
+    # encore connus (jamais vides individuellement pour une connexion client).
+    _write(tmp_path, "postgresql.log", """\
+2026-08-19 14:54:02.904 CEST [inconnu] [inconnu] [inconnu] [49272] LOG:  connexion reçue : hôte=10.0.1.80 port=63697
+2026-08-19 14:54:02.924 CEST [inconnu] thomas.lauret bdd_iroise [49272] LOG:  connexion autorisée : utilisateur=thomas.lauret base de données bdd_iroise
+""")
+
+    result = analyze_directory(tmp_path)
+
+    assert result["metadata"]["connections_total"] == 1
+    assert result["metadata"]["lines_unparsed"] == 0
+    thomas = result["roles"]["thomas.lauret"]
+    assert thomas["databases"] == {"bdd_iroise": 1}
+    assert thomas["source_hosts"] == {"10.0.1.80": 1}
+
+
+def test_analyze_directory_does_not_flag_translated_context_label_as_unparsed(tmp_path: Path):
+    # CCPI : les libellés secondaires traduits ("CONTEXTE", "INSTRUCTION")
+    # ont un espace avant le ":", contrairement à "LOG:"/"FATAL:" qui restent
+    # en anglais sans espace — doit rester "other_events", pas "unparsed".
+    _write(tmp_path, "postgresql.log", """\
+2026-08-01 00:08:30.193 CEST [inconnu] topkapi.postgre topkapi_ccpi [45408] CONTEXTE :  instruction SQL
+""")
+
+    result = analyze_directory(tmp_path)
+
+    assert result["metadata"]["lines_unparsed"] == 0
+    assert result["metadata"]["lines_other_events"] == 1
+
+
 def test_analyze_directory_falls_back_to_cp1252_for_non_utf8_files(tmp_path: Path):
     # Logs PostgreSQL Windows réels (mission CCPCAM) : encodage cp1252, pas
     # UTF-8. Décodés en UTF-8 (même avec errors="replace"), les caractères
