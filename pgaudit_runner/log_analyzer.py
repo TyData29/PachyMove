@@ -7,12 +7,21 @@ from pathlib import Path
 from typing import Optional
 
 # Préfixe par défaut de PostgreSQL : '%m [%p] ' — %m = timestamp avec
-# millisecondes + fuseau, %p = PID. À ajuster si le vrai log_line_prefix
-# diverge (cf. note "lines_unparsed" en sortie : signal immédiat en cas
-# d'écart plutôt qu'un échec silencieux).
+# millisecondes + fuseau, %p = PID. Le groupe optionnel avant [%p] couvre en
+# plus un préfixe '%m %a %u %d [%p] ' (observé en pratique sur CCPI) :
+# application_name/utilisateur/base de données, chacun soit une valeur réelle
+# soit le littéral PostgreSQL "[inconnu]"/"[unknown]" tant qu'ils ne sont pas
+# encore connus — jamais vide pour une connexion client, donc toujours 0 ou 3
+# jetons, jamais un nombre intermédiaire. L'espace optionnel avant le ":" du
+# niveau couvre les libellés secondaires traduits en français ("CONTEXTE :",
+# "INSTRUCTION :", avec espace avant le ":", contrairement à "LOG:"/"FATAL:"
+# qui restent en anglais sans espace). À ajuster encore si le vrai
+# log_line_prefix diverge autrement (cf. note "lines_unparsed" en sortie :
+# signal immédiat en cas d'écart plutôt qu'un échec silencieux).
 _LINE_RE = re.compile(
     r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \S+)\s+"
-    r"\[(?P<pid>\d+)\]\s+(?P<level>\w+):\s+(?P<message>.*)$"
+    r"(?:\S+\s+\S+\s+\S+\s+)?"
+    r"\[(?P<pid>\d+)\]\s+(?P<level>\w+)\s*:\s+(?P<message>.*)$"
 )
 
 _RECEIVED_RE = re.compile(r"^connection received:\s+host=(?P<host>\S+?)(?:\s+port=\d+)?$")
