@@ -192,6 +192,8 @@ def collect_cmd(
 def report_cmd(input_file: Path, output_file: Path, max_rows: int) -> None:
     """Génère le rapport Markdown depuis un JSON d'audit."""
     try:
+        if output_file.is_dir():
+            output_file = output_file / f"{report_stem(input_file)}.md"
         md = generate_report(input_file, max_rows=max_rows)
         output_file.write_text(md, encoding="utf-8")
         click.echo(f"Rapport généré : {output_file}")
@@ -213,6 +215,8 @@ def report_cmd(input_file: Path, output_file: Path, max_rows: int) -> None:
 def html_cmd(input_file: Path, output_file: Path) -> None:
     """Convertit un rapport Markdown en HTML autonome (CSS intégrée, sans dépendance externe)."""
     try:
+        if output_file.is_dir():
+            output_file = output_file / f"{input_file.stem}.html"
         md = input_file.read_text(encoding="utf-8")
         html = render_html(md)
         output_file.write_text(html, encoding="utf-8")

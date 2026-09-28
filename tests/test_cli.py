@@ -213,6 +213,50 @@ def test_html_command_converts_markdown_file(tmp_path: Path):
     assert "<table>" in html
 
 
+def test_report_command_output_dir_derives_filename(tmp_path: Path):
+    # --output pointant vers un dossier existant (habitude issue de `collect`,
+    # qui prend un dossier) plantait avec un PermissionError opaque au lieu
+    # de dériver un nom de fichier.
+    audit = tmp_path / "audit_m_20260815_090000.json"
+    audit.write_text(json.dumps({
+        "metadata": {
+            "manifest_name": "Test", "started_at": "2026-08-15T09:00:00+00:00",
+            "source": {"host": "srv"},
+            "summary": {"total": 0, "success": 0, "skipped": 0, "error": 0},
+        },
+        "results": [],
+    }), encoding="utf-8")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    runner = CliRunner()
+
+    result = runner.invoke(cli, [
+        "report", "--input", str(audit), "--output", str(out_dir),
+    ])
+
+    assert result.exit_code == 0, result.output
+    report_file = out_dir / "rapport_m_20260815_090000.md"
+    assert report_file.exists()
+    assert "# Rapport de pré-audit PostgreSQL" in report_file.read_text(encoding="utf-8")
+
+
+def test_html_command_output_dir_derives_filename(tmp_path: Path):
+    md_file = tmp_path / "rapport.md"
+    md_file.write_text("# Titre\n\n| a | b |\n|---|---|\n| 1 | 2 |\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    runner = CliRunner()
+
+    result = runner.invoke(cli, [
+        "html", "--input", str(md_file), "--output", str(out_dir),
+    ])
+
+    assert result.exit_code == 0, result.output
+    html_file = out_dir / "rapport.html"
+    assert html_file.exists()
+    assert html_file.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+
+
 def test_dashboard_command_generates_index_and_run_reports(tmp_path: Path):
     input_dir = tmp_path / "output"
     input_dir.mkdir()
