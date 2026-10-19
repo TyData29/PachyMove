@@ -239,7 +239,7 @@ Si au moins une requête déclare `expect_rows`, ou expose des colonnes `severit
 
 ## `qgisaudit-runner` — inventaire des projets QGIS (module séparé)
 
-Outil **autonome**, distinct de `pgaudit-runner` : ne se connecte à aucune base, lit uniquement des fichiers `.qgs`/`.qgz` sur disque (partages réseau). Sa propre commande CLI (`qgisaudit-runner`), sa propre configuration YAML. Spec complète : `.tydata/specs/spec_script_inventaire_qgis.md`.
+Outil **autonome**, distinct de `pgaudit-runner` : lit les fichiers `.qgs`/`.qgz` sur disque (partages réseau) et, si la clé `bases` de la configuration liste des chaînes de connexion, les projets stockés en base (tables `qgis_projects`, session en lecture seule). Sa propre commande CLI (`qgisaudit-runner`), sa propre configuration YAML. Spec complète : `.tydata/specs/spec_script_inventaire_qgis.md`.
 
 ```powershell
 cp qgisaudit_runner/config.example.yml config_qgis.yml
@@ -248,7 +248,7 @@ cp qgisaudit_runner/config.example.yml config_qgis.yml
 qgisaudit-runner --config config_qgis.yml
 ```
 
-Parcourt récursivement les racines déclarées, identifie les couches PostgreSQL de chaque projet (`<provider>postgres</provider>`), et classe chaque projet selon son mode de connexion (`nommee` = tout en `service=` centralisé, `embarquee` = tout en connexion directe/`authcfg=`, `mixte`, `sans_pg`). Produit deux CSV dans le dossier de sortie :
+Parcourt récursivement les racines déclarées, puis les tables `qgis_projects` des bases déclarées (chemin du projet au format d'URI de QGIS, `postgresql:///?service=...&schema=...&project=...`), identifie les couches PostgreSQL de chaque projet (`<provider>postgres</provider>`), et classe chaque projet selon son mode de connexion (`nommee` = tout en `service=` centralisé, `embarquee` = tout en connexion directe/`authcfg=`, `mixte`, `sans_pg`). Produit deux CSV dans le dossier de sortie :
 
 - `projets.csv` — une ligne par projet (comptage de couches, profil, drapeaux `mdp_en_clair`/`authcfg_utilise`, services/hôtes/bases distincts).
 - `couches_pg.csv` — une ligne par couche PostgreSQL (mode de connexion, paramètres, schéma/table/colonne géométrique/SRID).

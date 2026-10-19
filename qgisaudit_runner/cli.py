@@ -38,15 +38,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    racines_raw = config.get("racines", [])
+    racines_raw = config.get("racines", []) or []
     if isinstance(racines_raw, (str, Path)):
         racines_raw = [racines_raw]
     if not isinstance(racines_raw, list):
         print("Configuration invalide : 'racines' doit être une liste de chemins.", file=sys.stderr)
         return 1
     racines = [Path(p) for p in racines_raw]
-    if not racines:
-        print("Aucune racine déclarée dans la configuration (clé 'racines').", file=sys.stderr)
+
+    bases_raw = config.get("bases", []) or []
+    if isinstance(bases_raw, str):
+        bases_raw = [bases_raw]
+    if not isinstance(bases_raw, list):
+        print("Configuration invalide : 'bases' doit être une liste de chaînes de connexion.", file=sys.stderr)
+        return 1
+    bases = [str(b) for b in bases_raw]
+
+    if not racines and not bases:
+        print("Aucune racine ni base déclarée dans la configuration (clés 'racines' et 'bases').", file=sys.stderr)
         return 1
 
     extensions_raw = config.get("extensions", [".qgs", ".qgz"])
@@ -59,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     dossier_sortie = Path(config.get("dossier_sortie", "output"))
-    run_inventory(racines, extensions, dossier_sortie)
+    run_inventory(racines, extensions, dossier_sortie, bases)
     return 0
 
 
