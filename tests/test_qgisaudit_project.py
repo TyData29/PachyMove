@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from qgisaudit_runner.qgis_project import ProjectParseError, parse_project
+from qgisaudit_runner.qgis_project import ProjectParseError, parse_project, parse_project_bytes
 
 _QGS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <qgis version="3.28">
@@ -118,3 +118,23 @@ def test_parse_project_layer_without_provider_element_is_not_pg(tmp_path: Path):
     assert len(layers) == 1
     assert layers[0].categorie == "autres"
     assert layers[0].parsed is None
+
+
+def test_parse_project_bytes_reads_qgz_content_from_database():
+    import io
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("mon projet.qgs", _QGS_XML)
+    layers = parse_project_bytes(buffer.getvalue(), "mon projet", "schema.qgis_projects/mon projet")
+    assert [l.categorie for l in layers] == ["pg", "fichier", "autres"]
+
+
+def test_parse_project_bytes_accepts_plain_qgs():
+    layers = parse_project_bytes(_QGS_XML.encode("utf-8"), "p", "p")
+    assert len(layers) == 3
+
+
+def test_parse_project_bytes_invalid_xml_raises_project_parse_error():
+    with pytest.raises(ProjectParseError):
+        parse_project_bytes(b"<qgis><projectlayers>", "p", "p")

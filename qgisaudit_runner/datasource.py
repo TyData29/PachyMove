@@ -8,8 +8,9 @@ from typing import Optional
 # QGIS, peut contenir des espaces (ex. "Point de comptage"). Traité à part du
 # tokenizer générique ci-dessous : ses valeurs sont entre guillemets doubles,
 # pas simples, et sa forme (deux identifiants + parenthèse) ne rentre pas dans
-# le patron clé=valeur des autres paramètres.
-_TABLE_RE = re.compile(r'table="([^"]*)"\."([^"]*)"\s*\(([^)]*)\)')
+# le patron clé=valeur des autres paramètres. La parenthèse est absente pour
+# une table sans géométrie (table attributaire chargée dans le projet).
+_TABLE_RE = re.compile(r'table="([^"]*)"\."([^"]*)"(?:\s*\(([^)]*)\))?')
 
 # Valeur entre guillemets simples (peut contenir des espaces), entre guillemets
 # doubles, ou non quotée (\S*, jamais \S+ : gère une clé sans valeur en fin de
@@ -40,7 +41,7 @@ def parse_datasource(raw: str) -> Datasource:
     if table_match:
         ds.schema = table_match.group(1) or None
         ds.table = table_match.group(2) or None
-        ds.geom_column = table_match.group(3).strip() or None
+        ds.geom_column = (table_match.group(3) or "").strip() or None
         remainder = raw[: table_match.start()] + raw[table_match.end() :]
 
     for m in _KV_RE.finditer(remainder):

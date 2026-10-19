@@ -10,4 +10,11 @@ extensions:
   - ".qgs"
   - ".qgz"
 
+# Bases dont les projets QGIS stockés (tables qgis_projects) sont aussi
+# inventoriés : chaînes de connexion libpq. Mot de passe via pg_service.conf,
+# pgpass ou PGPASSWORD, sinon demandé au lancement. Session en lecture seule.
+bases:
+# - "service=sig_prod"
+# - "host=10.0.0.5 port=5432 dbname=sig user=lecteur"
+
 dossier_sortie: "output"

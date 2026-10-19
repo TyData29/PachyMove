@@ -162,3 +162,47 @@ def test_run_inventory_missing_root_does_not_crash(tmp_path: Path):
     projets_csv, couches_csv = run_inventory([racine_absente], [".qgs"], sortie)
 
     assert _read_csv(projets_csv) == []
+
+
+def test_run_inventory_includes_projects_stored_in_database(tmp_path: Path, monkeypatch):
+    import io
+    import zipfile
+
+    from qgisaudit_runner import inventory
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("en_base.qgs", _qgs([
+            ("c1", "postgres", "service='sig_prod' table=\"cadastre\".\"proprietaire\""),
+        ]))
+    chemin = "postgresql:///?service=sig_prod&schema=qgis&project=en_base"
+
+    def faux_projets(conninfo):
+        assert conninfo == "service=sig_prod"
+        yield chemin, "en_base", buffer.getvalue()
+
+    monkeypatch.setattr(inventory, "iter_projets_en_base", faux_projets)
+    sortie = tmp_path / "out"
+    run_inventory([], [".qgs"], sortie, ["service=sig_prod"])
+
+    projets = _read_csv(sortie / "projets.csv")
+    couches = _read_csv(sortie / "couches_pg.csv")
+    assert [p["chemin"] for p in projets] == [chemin]
+    assert projets[0]["nom_projet"] == "en_base"
+    assert (couches[0]["schema"], couches[0]["table"], couches[0]["colonne_geom"]) == ("cadastre", "proprietaire", "")
+
+
+def test_run_inventory_unreachable_database_does_not_crash(tmp_path: Path, monkeypatch):
+    from qgisaudit_runner import inventory
+
+    def base_injoignable(conninfo):
+        raise OSError("connexion refusée")
+        yield  # générateur
+
+    racine = tmp_path / "sig"
+    _write(racine / "valide.qgs", _qgs([("c1", "ogr", "/data/x.shp")]))
+    monkeypatch.setattr(inventory, "iter_projets_en_base", base_injoignable)
+    sortie = tmp_path / "out"
+    run_inventory([racine], [".qgs"], sortie, ["service=absent"])
+
+    assert [p["nom_projet"] for p in _read_csv(sortie / "projets.csv")] == ["valide"]

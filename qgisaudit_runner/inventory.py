@@ -4,10 +4,11 @@ import csv
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Callable, Iterable, Iterator
 
+from .database import iter_projets_en_base
 from .datasource import determine_mode_connexion
-from .qgis_project import LayerInfo, ProjectParseError, parse_project
+from .qgis_project import LayerInfo, ProjectParseError, parse_project, parse_project_bytes
 
 _LISTE_SEP = "; "
 
@@ -62,8 +63,8 @@ def _couche_pg_row(chemin_projet: str, layer: LayerInfo) -> dict:
     }
 
 
-def build_project_result(path: Path, layers: list[LayerInfo]) -> ProjectResult:
-    result = ProjectResult(chemin=str(path), nom_projet=path.stem)
+def build_project_result(chemin: str, nom_projet: str, layers: list[LayerInfo]) -> ProjectResult:
+    result = ProjectResult(chemin=chemin, nom_projet=nom_projet)
     result.nb_couches_total = len(layers)
 
     pg_layers = [l for l in layers if l.categorie == "pg"]
@@ -125,13 +126,30 @@ def _iter_project_files(racines: Iterable[Path], extensions: Iterable[str]) -> I
                 yield path
 
 
+def _iter_projets(
+    racines: Iterable[Path], extensions: Iterable[str], bases: Iterable[str]
+) -> Iterator[tuple[str, str, Callable[[], list[LayerInfo]]]]:
+    """(chemin, nom, lecture des couches) pour chaque projet : fichiers des
+    racines, puis projets stockés dans les bases. Une base injoignable est
+    signalée et sautée, comme un fichier illisible."""
+    for path in _iter_project_files(racines, extensions):
+        yield str(path), path.stem, lambda p=path: parse_project(p)
+    for conninfo in bases:
+        try:
+            for chemin, nom, contenu in iter_projets_en_base(conninfo):
+                yield chemin, nom, lambda c=contenu, n=nom, ch=chemin: parse_project_bytes(c, n, ch)
+        except Exception as e:  # base injoignable ou droits insuffisants : on continue
+            print(f"[ignoré] base {conninfo} : {e}", file=sys.stderr)
+
+
 def run_inventory(
-    racines: list[Path], extensions: list[str], dossier_sortie: Path
+    racines: list[Path], extensions: list[str], dossier_sortie: Path, bases: Iterable[str] = ()
 ) -> tuple[Path, Path]:
-    """Parcourt `racines` récursivement, inventorie les projets QGIS trouvés, et
-    écrit projets.csv/couches_pg.csv dans `dossier_sortie`. Ne plante jamais sur
-    un fichier individuel (spec §7) : erreurs logguées sur stderr, traitement
-    des autres fichiers poursuivi.
+    """Parcourt `racines` récursivement et les tables `qgis_projects` des
+    `bases` (chaînes de connexion libpq), inventorie les projets QGIS trouvés,
+    et écrit projets.csv/couches_pg.csv dans `dossier_sortie`. Ne plante jamais
+    sur un projet individuel (spec §7) : erreurs logguées sur stderr, traitement
+    des autres projets poursuivi.
 
     Les deux CSV sont écrits en flux continu (streaming) : chaque projet est
     traité et écrit dès sa découverte, sans accumuler l'ensemble des chemins ou
@@ -152,17 +170,17 @@ def run_inventory(
         cw = csv.DictWriter(fc, fieldnames=_COUCHES_PG_COLUMNS)
         cw.writeheader()
 
-        for path in _iter_project_files(racines, extensions):
+        for chemin, nom, lire_couches in _iter_projets(racines, extensions, bases):
             nb_fichiers += 1
             try:
-                layers = parse_project(path)
+                layers = lire_couches()
             except ProjectParseError as e:
                 print(f"[ignoré] {e}", file=sys.stderr)
                 continue
-            except Exception as e:  # défense large : un fichier ne doit jamais arrêter le scan
-                print(f"[ignoré] erreur inattendue sur {path} : {e}", file=sys.stderr)
+            except Exception as e:  # défense large : un projet ne doit jamais arrêter le scan
+                print(f"[ignoré] erreur inattendue sur {chemin} : {e}", file=sys.stderr)
                 continue
-            r = build_project_result(path, layers)
+            r = build_project_result(chemin, nom, layers)
             nb_analyses += 1
             pw.writerow({
                 "chemin": r.chemin,
@@ -182,7 +200,7 @@ def run_inventory(
                 cw.writerow(row)
 
     print(
-        f"{nb_analyses} projet(s) analysé(s) sur {nb_fichiers} fichier(s) trouvé(s).",
+        f"{nb_analyses} projet(s) analysé(s) sur {nb_fichiers} trouvé(s).",
         file=sys.stderr,
     )
     return projets_csv, couches_csv

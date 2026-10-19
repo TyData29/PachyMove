@@ -67,3 +67,11 @@ def test_parse_datasource_get_returns_none_for_empty_value():
     ds = parse_datasource("password= host=10.0.0.1")
     assert ds.get("password") is None
     assert ds.get("host") == "10.0.0.1"
+
+
+def test_parse_datasource_table_without_geometry_keeps_schema_and_table():
+    ds = parse_datasource("service='sig_prod' key='id' table=\"cadastre\".\"proprietaire\" sql=")
+    assert ds.schema == "cadastre"
+    assert ds.table == "proprietaire"
+    assert ds.geom_column is None
+    assert ds.get("key") == "id"

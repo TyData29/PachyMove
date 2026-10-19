@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass
@@ -32,20 +33,28 @@ class LayerInfo:
         return "autres"
 
 
+_ZIP_SIGNATURE = b"PK\x03\x04"
+
+
+def _qgs_from_zip(source, base: str, label: str) -> str:
+    """Texte du .qgs d'une archive .qgz (`source` : chemin ou flux binaire).
+    Préfère le .qgs qui porte le nom `base` du projet."""
+    try:
+        with zipfile.ZipFile(source) as zf:
+            names = [n for n in zf.namelist() if n.lower().endswith(".qgs")]
+            if not names:
+                raise ProjectParseError(f"aucun .qgs dans l'archive : {label}")
+            preferred = [n for n in names if Path(n).stem == base]
+            chosen = preferred[0] if preferred else names[0]
+            with zf.open(chosen) as f:
+                return f.read().decode("utf-8", errors="replace")
+    except zipfile.BadZipFile as e:
+        raise ProjectParseError(f"archive .qgz invalide : {label} ({e})") from e
+
+
 def _extract_qgs_text(path: Path) -> str:
     if path.suffix.lower() == ".qgz":
-        try:
-            with zipfile.ZipFile(path) as zf:
-                names = [n for n in zf.namelist() if n.lower().endswith(".qgs")]
-                if not names:
-                    raise ProjectParseError(f"aucun .qgs dans l'archive : {path}")
-                base = path.stem
-                preferred = [n for n in names if Path(n).stem == base]
-                chosen = preferred[0] if preferred else names[0]
-                with zf.open(chosen) as f:
-                    return f.read().decode("utf-8", errors="replace")
-        except zipfile.BadZipFile as e:
-            raise ProjectParseError(f"archive .qgz invalide : {path} ({e})") from e
+        return _qgs_from_zip(path, path.stem, str(path))
     try:
         return path.read_text(encoding="utf-8", errors="replace")
     except OSError as e:
@@ -56,12 +65,26 @@ def parse_project(path: Path) -> list[LayerInfo]:
     """Extrait les couches d'un projet .qgs/.qgz. Lève ProjectParseError sur
     tout fichier illisible/corrompu — à l'appelant de logguer et continuer
     (spec §7), jamais géré silencieusement ici."""
-    text = _extract_qgs_text(path)
+    return _parse_qgs_text(_extract_qgs_text(path), str(path))
 
+
+def parse_project_bytes(data: bytes, nom: str, label: str) -> list[LayerInfo]:
+    """Extrait les couches d'un projet lu en mémoire : contenu de la colonne
+    `content` d'une table `qgis_projects` (stockage PostgreSQL de QGIS). Ce
+    contenu est une archive .qgz ; un .qgs brut est aussi accepté. `nom` est le
+    nom du projet, `label` sert aux messages d'erreur."""
+    if data.startswith(_ZIP_SIGNATURE):
+        text = _qgs_from_zip(io.BytesIO(data), nom, label)
+    else:
+        text = data.decode("utf-8", errors="replace")
+    return _parse_qgs_text(text, label)
+
+
+def _parse_qgs_text(text: str, label: str) -> list[LayerInfo]:
     try:
         root = ET.fromstring(text)
     except ET.ParseError as e:
-        raise ProjectParseError(f"XML invalide : {path} ({e})") from e
+        raise ProjectParseError(f"XML invalide : {label} ({e})") from e
 
     layers: list[LayerInfo] = []
     for maplayer in root.iter("maplayer"):
